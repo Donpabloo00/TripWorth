@@ -18,7 +18,11 @@ data class HistoryEntry(
     val totalMinutes: Int?,
     val ronPerKm: Double?,
     val ronPerHour: Double?,
+    /** Take-home rate, which is what the goal is actually compared against. */
+    val netRonPerHour: Double? = null,
     val verdict: Verdict,
+    /** Stable name of the rule that turned this offer away, if one did. */
+    val rejectedBy: String? = null,
     val driverDecision: DriverDecision? = null
 )
 
@@ -46,8 +50,12 @@ class HistoryStore(context: Context) {
                     totalMinutes = if (o.has("min")) o.optInt("min") else null,
                     ronPerKm = o.optDoubleOrNull("rk"),
                     ronPerHour = o.optDoubleOrNull("rh"),
+                    // Absent from entries written before net was recorded;
+                    // they load as null rather than blocking the whole list.
+                    netRonPerHour = o.optDoubleOrNull("rhn"),
                     verdict = runCatching { Verdict.valueOf(o.optString("v")) }
                         .getOrDefault(Verdict.CAUTION),
+                    rejectedBy = o.optString("rb").takeIf { it.isNotEmpty() },
                     driverDecision = runCatching {
                         DriverDecision.valueOf(o.optString("d"))
                     }.getOrNull()
@@ -65,7 +73,9 @@ class HistoryStore(context: Context) {
             totalMinutes = analysis.totalMinutes,
             ronPerKm = analysis.ronPerKm,
             ronPerHour = analysis.ronPerHour,
-            verdict = analysis.verdict
+            netRonPerHour = analysis.netRonPerHour,
+            verdict = analysis.verdict,
+            rejectedBy = analysis.failedRules.firstOrNull()
         )
         val updated = (listOf(entry) + load()).take(MAX_ENTRIES)
         persist(updated)
@@ -94,7 +104,9 @@ class HistoryStore(context: Context) {
             e.totalMinutes?.let { o.put("min", it) }
             e.ronPerKm?.let { o.put("rk", it) }
             e.ronPerHour?.let { o.put("rh", it) }
+            e.netRonPerHour?.let { o.put("rhn", it) }
             o.put("v", e.verdict.name)
+            e.rejectedBy?.let { o.put("rb", it) }
             e.driverDecision?.let { o.put("d", it.name) }
             array.put(o)
         }

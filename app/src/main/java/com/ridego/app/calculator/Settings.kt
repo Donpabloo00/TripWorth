@@ -17,14 +17,18 @@ data class RideSettings(
     val includePickup: Boolean = true,
 
     /**
-     * Share of the shift actually spent on a trip, as a percentage.
+     * How many rides the driver completes in an average hour.
      *
-     * The hourly goal is about the shift, but the verdict judges one ride at
-     * a time. At 70% occupancy a 60 RON/h goal needs rides paying 86 RON/h;
-     * without this the app quietly promises a figure the shift never reaches.
-     * 100 means "judge each ride against the goal directly".
+     * This is what makes the hourly figure real. Judging a ride on its own
+     * duration alone answers "what would an hour of nothing but this ride
+     * pay" — for a 7-minute job that came out as 120 RON/oră, which assumes
+     * 8.5 of them chained without a pause. At 2.5 rides an hour the same job
+     * really occupies 24 minutes of the shift, and pays 35.
+     *
+     * Chosen over a percentage of "utilisation" because a driver knows this
+     * number from experience and cannot estimate the other one at all.
      */
-    val utilizationPercent: Int = 100,
+    val ridesPerHour: Double = 2.5,
 
     // --- acceptance criteria (each one independently switchable) ---------
     //

@@ -116,7 +116,12 @@ fun OfferScreen(analysis: OfferAnalysis, onBack: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     MetricTile("RON/km", analysis.ronPerKm.ron(), Modifier.weight(1f), RideYellow)
-                    MetricTile("RON/oră", analysis.ronPerHour.ron(), Modifier.weight(1f), RideYellow)
+                    MetricTile(
+                        "RON/oră tură",
+                        analysis.ronPerHour.ron(),
+                        Modifier.weight(1f),
+                        RideYellow
+                    )
                 }
                 Spacer(Modifier.height(20.dp))
                 Row(

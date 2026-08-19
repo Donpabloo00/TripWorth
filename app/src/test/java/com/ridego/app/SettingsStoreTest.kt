@@ -113,6 +113,18 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun `the pace round-trips and never loads as zero`() {
+        val prefs = FakePrefs()
+        SettingsStore(prefs).save(RideSettings(ridesPerHour = 3.5))
+        assertEquals(3.5, SettingsStore(prefs).load().ridesPerHour, 0.0001)
+
+        // A zero pace would mean an infinitely long slot and a hourly figure
+        // of zero for every offer, so it falls back to the default.
+        prefs.values["rides_per_hour"] = 0f
+        assertEquals(2.5, SettingsStore(prefs).load().ridesPerHour, 0.0001)
+    }
+
+    @Test
     fun `the banner size and anchor round-trip`() {
         val prefs = FakePrefs()
         SettingsStore(prefs).save(

@@ -54,7 +54,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             }.getOrDefault(d.platformMode),
             debugMode = prefs.getBoolean(KEY_DEBUG, d.debugMode),
             includePickup = prefs.getBoolean(KEY_INCLUDE_PICKUP, d.includePickup),
-            utilizationPercent = prefs.getInt(KEY_UTILIZATION, d.utilizationPercent),
+            ridesPerHour = prefs.getPositiveMoney(KEY_RIDES_PER_HOUR, d.ridesPerHour),
             minCostPerKmEnabled = prefs.getBoolean(KEY_MIN_COST_KM_ON, d.minCostPerKmEnabled),
             minCostPerKm = prefs.getPositiveMoney(KEY_MIN_COST_KM, d.minCostPerKm),
             maxPickupKmEnabled = prefs.getBoolean(KEY_MAX_PICKUP_KM_ON, d.maxPickupKmEnabled),
@@ -94,7 +94,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             .putString(KEY_PLATFORM, settings.platformMode.name)
             .putBoolean(KEY_DEBUG, settings.debugMode)
             .putBoolean(KEY_INCLUDE_PICKUP, settings.includePickup)
-            .putInt(KEY_UTILIZATION, settings.utilizationPercent)
+            .putFloat(KEY_RIDES_PER_HOUR, settings.ridesPerHour.toFloat())
             .putBoolean(KEY_MIN_COST_KM_ON, settings.minCostPerKmEnabled)
             .putFloat(KEY_MIN_COST_KM, settings.minCostPerKm.toFloat())
             .putBoolean(KEY_MAX_PICKUP_KM_ON, settings.maxPickupKmEnabled)
@@ -133,7 +133,9 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
         const val KEY_PLATFORM = "platform_mode"
         const val KEY_DEBUG = "debug_mode"
         const val KEY_INCLUDE_PICKUP = "include_pickup"
-        const val KEY_UTILIZATION = "utilization_percent"
+        // Replaces "utilization_percent", which measured the same idea in a
+        // unit no driver could estimate. The old key stays on disk, unread.
+        const val KEY_RIDES_PER_HOUR = "rides_per_hour"
         // Renamed from "max_pickup_km": the old key carried 0 to mean "off",
         // which under the new switch would read back as an active 0 km limit
         // that rejects every offer.

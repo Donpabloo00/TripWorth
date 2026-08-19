@@ -171,6 +171,7 @@ private fun RideGoNavHost() {
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 settings = settings,
+                history = history,
                 onChange = { updated ->
                     AppState.updateSettings(updated)
                     if (updated.overlayEnabled && !OverlayService.canDrawOverlays(context)) {

@@ -638,8 +638,9 @@ class OverlayService : Service() {
 
         perKmView.text = analysis.ronPerKm
             ?.let { String.format(ro, "%.2f RON/km", it) } ?: "— RON/km"
+        // Labelled as a shift hour, because that is what it now measures.
         perHourView.text = analysis.ronPerHour
-            ?.let { String.format(ro, "%.0f RON/oră", it) } ?: "— RON/oră"
+            ?.let { String.format(ro, "%.0f RON/oră tură", it) } ?: "— RON/oră"
 
         val verdictColor = when (analysis.verdict) {
             Verdict.ACCEPT -> GREEN

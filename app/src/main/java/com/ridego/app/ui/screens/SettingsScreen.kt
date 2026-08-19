@@ -23,7 +23,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import com.ridego.app.calculator.OfferCalculator
 import com.ridego.app.calculator.OverlayAnchor
 import com.ridego.app.calculator.RuleProfile
+import com.ridego.app.data.HistoryEntry
+import com.ridego.app.data.ShiftStats
 import com.ridego.app.calculator.RideSettings
 import com.ridego.app.overlay.OverlayService
 import com.ridego.app.parser.PlatformMode
@@ -54,6 +58,10 @@ private val RO = Locale("ro", "RO")
 private fun money(value: Double, decimals: Int = 2) =
     String.format(RO, "%,.${decimals}f", value)
 
+/** Snaps a measured pace onto the half-ride steps the setting moves in. */
+private fun round(value: Double): Double =
+    (Math.round(value * 2) / 2.0).coerceIn(1.0, 6.0)
+
 /**
  * Rebuilt around the one question a driver actually asks: how much do I want
  * to make per hour. Everything else is either an input to that number or an
@@ -65,6 +73,8 @@ private fun money(value: Double, decimals: Int = 2) =
 @Composable
 fun SettingsScreen(
     settings: RideSettings,
+    /** The driver's own record, so the pace can be measured, not just assumed. */
+    history: List<HistoryEntry>,
     onChange: (RideSettings) -> Unit,
     onOpenOverlayDebug: () -> Unit,
     onOpenOptimization: () -> Unit,
@@ -74,8 +84,13 @@ fun SettingsScreen(
     val costPerKm = settings.consumptionLPer100Km / 100.0 * settings.fuelPricePerLiter +
         settings.extraCostPerKm
     val fuelPerHour = CITY_SPEED_KMH * costPerKm
-    // The bar a single ride has to clear, once idle time is accounted for.
+    // The bar a single ride has to clear.
     val effectiveTarget = OfferCalculator.effectiveTarget(settings)
+    // Minutes of the shift one ride consumes at the declared pace, and what it
+    // therefore has to leave behind to reach the goal.
+    val slotForPace = 60.0 / settings.ridesPerHour.coerceIn(0.5, 10.0)
+    val perRideNeeded = settings.minimumRonPerHour / settings.ridesPerHour.coerceIn(0.5, 10.0)
+    val shift = remember(history) { ShiftStats.summarise(history) }
     val grossNeeded = effectiveTarget + fuelPerHour
 
     Column(
@@ -155,56 +170,140 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.height(10.dp))
                 Advice(
-                    "Practic: o cursă de 30 de minute merită de la " +
-                        "${money(grossNeeded / 2)} RON în sus.",
+                    "La ${money(settings.ridesPerHour, 1)} curse pe oră, asta înseamnă o ofertă " +
+                        "de la ${money(grossNeeded / settings.ridesPerHour.coerceAtLeast(0.5))} " +
+                        "RON în sus.",
                     highlight = true
                 )
                 Spacer(Modifier.height(10.dp))
                 Advice(
-                    "RON/km e afișat, dar nu mai decide verdictul. Tarifele reale sunt în " +
-                        "jur de 2 RON/km, deci un prag pe kilometru respingea absolut tot."
+                    "Cifra pe oră ține cont de ritmul tău, nu presupune că înlănțui curse " +
+                        "fără pauză. De aceea e mai mică decât în alte aplicații — și de " +
+                        "aceea seamănă cu ce vezi la finalul turei."
                 )
             }
         }
 
         // --- occupancy ------------------------------------------------------
         Spacer(Modifier.height(14.dp))
-        SectionLabel("Grad de ocupare")
+        SectionLabel("Ritmul tău")
         Spacer(Modifier.height(10.dp))
         RideCard {
             Column {
                 Text(
-                    "Cât din tură ești efectiv în cursă",
+                    "Câte curse faci într-o oră obișnuită",
                     style = MaterialTheme.typography.bodyLarge,
                     color = RideWhite
                 )
-                Spacer(Modifier.height(12.dp))
-                LabelledStepper(
-                    label = "Ocupare",
-                    value = settings.utilizationPercent.toDouble(),
-                    step = 5.0,
-                    range = 30.0..100.0,
-                    format = { "${money(it, 0)} %" },
-                    onValue = { onChange(settings.copy(utilizationPercent = it.roundToInt())) }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "inclusiv timpul în care aștepți comenzi",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = RideGray
                 )
                 Spacer(Modifier.height(12.dp))
-                if (settings.utilizationPercent >= 100) {
+                LabelledStepper(
+                    label = "Ritm",
+                    value = settings.ridesPerHour,
+                    step = 0.5,
+                    range = 1.0..6.0,
+                    format = { "${money(it, 1)} curse/oră" },
+                    onValue = { onChange(settings.copy(ridesPerHour = it)) }
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(1.5, 2.0, 2.5, 3.0, 4.0).forEach { preset ->
+                        FilterChip(
+                            selected = Math.abs(settings.ridesPerHour - preset) < 0.01,
+                            onClick = { onChange(settings.copy(ridesPerHour = preset)) },
+                            label = { Text(money(preset, 1)) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = RideYellow,
+                                selectedLabelColor = Color.Black
+                            )
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+                Advice(
+                    "La ${money(settings.ridesPerHour, 1)} curse pe oră, fiecare cursă îți " +
+                        "ocupă în medie ${money(slotForPace, 0)} minute din tură — timpul de " +
+                        "condus plus așteptarea de după."
+                )
+                Spacer(Modifier.height(8.dp))
+                Advice(
+                    "Ca să scoți ${money(settings.minimumRonPerHour, 0)} RON/oră, o cursă " +
+                        "trebuie să îți lase ${money(perRideNeeded, 0)} RON net în buzunar, " +
+                        "după carburant.",
+                    highlight = true
+                )
+                Spacer(Modifier.height(8.dp))
+                Advice(
+                    "Asta e cifra care contează. Fără ea, o cursă de 7 minute pare că " +
+                        "plătește 120 RON/oră — adevărat doar dacă ai face 8 la rând, " +
+                        "fără nicio pauză."
+                )
+
+                // The whole model rests on the number above, and it is a guess
+                // until the driver's own record is put next to it.
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = RideGray.copy(alpha = 0.2f))
+                Spacer(Modifier.height(14.dp))
+                val measured = shift.measuredRidesPerHour
+                if (measured == null) {
+                    Text(
+                        "RITMUL TĂU REAL",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = RideGray
+                    )
+                    Spacer(Modifier.height(6.dp))
                     Advice(
-                        "La 100% fiecare cursă e judecată direct față de " +
-                            "${money(settings.minimumRonPerHour, 0)} RON/oră. Dar dacă aștepți " +
-                            "între curse, ora reală de la finalul turei va fi mai mică."
+                        "Încă nu îl pot măsura — am nevoie de cel puțin " +
+                            "${ShiftStats.MIN_SAMPLE} curse marcate ca acceptate " +
+                            "(${shift.acceptedCount} până acum). Folosește butoanele " +
+                            "de pe banner după fiecare ofertă și îți spun ritmul tău " +
+                            "adevărat, în loc să îl ghicești."
                     )
                 } else {
+                    Text(
+                        "RITMUL TĂU REAL",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = RideYellow
+                    )
+                    Spacer(Modifier.height(6.dp))
                     Advice(
-                        "Ca să scoți ${money(settings.minimumRonPerHour, 0)} RON/oră peste toată " +
-                            "tura, fiecare cursă trebuie să plătească " +
-                            "${money(effectiveTarget, 0)} RON/oră net.",
+                        "Din ${shift.acceptedCount} curse acceptate în " +
+                            "${money(shift.activeHours, 1)} ore de tură: " +
+                            "${money(measured, 1)} curse/oră.",
                         highlight = true
                     )
-                    Spacer(Modifier.height(8.dp))
+                    shift.averageNetRonPerHour?.let { net ->
+                        Spacer(Modifier.height(6.dp))
+                        Advice(
+                            "Cursele acceptate ți-au lăsat în medie " +
+                                "${money(net, 0)} RON/oră net, față de obiectivul de " +
+                                "${money(settings.minimumRonPerHour, 0)}."
+                        )
+                    }
+                    if (Math.abs(measured - settings.ridesPerHour) >= 0.25) {
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = { onChange(settings.copy(ridesPerHour = round(measured))) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("FOLOSEȘTE ${money(round(measured), 1)} CURSE/ORĂ") }
+                    }
+                }
+                shift.topRejectionReason?.let { rule ->
+                    Spacer(Modifier.height(10.dp))
                     Advice(
-                        "Restul de ${100 - settings.utilizationPercent}% din tură stai fără " +
-                            "cursă — timpul acela trebuie plătit tot din cursele pe care le faci."
+                        "Regula care respinge cel mai des: $rule " +
+                            "(${shift.rejectedCount} oferte respinse în total)."
                     )
                 }
             }
@@ -535,6 +634,13 @@ fun SettingsScreen(
                     Advice(
                         "Butoanele notează ce ai decis TU. RideGo nu apasă nimic în " +
                             "Uber sau Bolt — citește ecranul, nu îl comandă."
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Advice(
+                        "Apasă-le de fiecare dată: din ele îți calculez ritmul real " +
+                            "de curse pe oră, iar ritmul decide toate cifrele pe oră " +
+                            "și verdictele.",
+                        highlight = true
                     )
                 }
 

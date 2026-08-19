@@ -25,6 +25,13 @@ data class OfferAnalysis(
      * arrive at once.
      */
     val reasons: List<String>,
+    /**
+     * Short, stable names of the rules this offer broke — "preț minim",
+     * "preluare" and so on. The reasons carry numbers and read as sentences;
+     * these are for counting, so the history can say which filter turns away
+     * the most work.
+     */
+    val failedRules: List<String>,
     /** Per-ride bar after the occupancy adjustment. */
     val effectiveHourlyTarget: Double
 ) {
@@ -41,16 +48,38 @@ object OfferCalculator {
 
     private val RO = java.util.Locale("ro", "RO")
 
-    /**
-     * The goal is stated per shift, but only part of a shift is spent on a
-     * trip. A 60 RON/h goal at 70% occupancy means each ride has to pay
-     * 60 / 0.70 = 86 RON/h for the shift to land on 60.
-     */
-    fun effectiveTarget(settings: RideSettings): Double {
-        val share = settings.utilizationPercent.coerceIn(1, 100) / 100.0
-        return settings.minimumRonPerHour / share
-    }
+    // Stable names for the rules, so history can count them without parsing
+    // the Romanian sentences the driver reads.
+    const val RULE_MIN_FARE = "preț minim"
+    const val RULE_COST_PER_KM = "cost minim / km"
+    const val RULE_PICKUP = "preluare prea departe"
+    const val RULE_TRIP_LENGTH = "cursă prea lungă"
+    const val RULE_HOURLY = "prag orar"
+    const val RULE_UNREADABLE = "citire incompletă"
 
+    /**
+     * The bar a ride has to clear. Now simply the driver's goal.
+     *
+     * It used to be the goal divided by a "utilisation" percentage, because
+     * the displayed rate assumed a shift of back-to-back driving and had to be
+     * compensated for somewhere. The rate itself is honest now — see
+     * [slotMinutes] — so the threshold needs no hidden correction.
+     */
+    fun effectiveTarget(settings: RideSettings): Double = settings.minimumRonPerHour
+
+    /**
+     * How much of the shift this ride really consumes.
+     *
+     * At N rides an hour, a ride occupies at least 60/N minutes: the waiting
+     * that follows it is part of its cost, and has to be paid for out of the
+     * rides that do happen. A ride longer than that slot occupies its own
+     * duration instead — a 45-minute job does not fit into an hour 2.5 times,
+     * so there is no idle time to charge it for.
+     */
+    fun slotMinutes(rideMinutes: Int, settings: RideSettings): Double {
+        val rides = settings.ridesPerHour.coerceIn(0.5, 10.0)
+        return Math.max(rideMinutes.toDouble(), 60.0 / rides)
+    }
 
     /** Within this band of a threshold the call is too close to be confident. */
     private const val BORDERLINE_MARGIN = 0.05
@@ -79,7 +108,11 @@ object OfferCalculator {
         val ronPerKm = if (price != null && totalKm != null && totalKm > 0) price / totalKm else null
         val ronPerMinute =
             if (price != null && totalMinutes != null && totalMinutes > 0) price / totalMinutes else null
-        val ronPerHour = ronPerMinute?.times(60)
+
+        // Both hourly figures describe an hour of shift, not an hour of this
+        // one ride repeated. Anything else overstates every short job.
+        val slot = totalMinutes?.let { slotMinutes(it, settings) }
+        val ronPerHour = if (price != null && slot != null && slot > 0) price / slot * 60 else null
 
         val costPerKm =
             settings.consumptionLPer100Km / 100.0 * settings.fuelPricePerLiter + settings.extraCostPerKm
@@ -87,28 +120,42 @@ object OfferCalculator {
         val estimatedProfit = if (price != null && fuelCost != null) price - fuelCost else null
 
         val netRonPerHour =
-            if (estimatedProfit != null && totalMinutes != null && totalMinutes > 0) {
-                estimatedProfit / totalMinutes * 60
+            if (estimatedProfit != null && slot != null && slot > 0) {
+                estimatedProfit / slot * 60
             } else {
                 null
             }
 
         // A ride has to clear the hard filters before the maths gets a say:
         // some jobs are badly shaped whatever the ratio works out to.
-        val (verdict, reasons) = if (!offer.isReliableFor(settings.includePickup)) {
-            Verdict.CAUTION to listOf("Date incomplete (${offer.confidence}%) — verifică manual")
-        } else if (implausible != null) {
-            // Never a verdict on impossible arithmetic: a mis-read minute
-            // makes every ratio below it wrong by the same factor, and the
-            // result looks confident rather than broken.
-            Verdict.CAUTION to listOf("Citire greșită — $implausible. Verifică manual.")
-        } else {
-            val blockers = hardFilterFailures(offer, settings)
-            if (blockers.isNotEmpty()) {
-                Verdict.REJECT to blockers
-            } else {
-                val (v, r) = decide(netRonPerHour, settings)
-                v to listOf(r)
+        val (verdict, reasons, failedRules) = when {
+            !offer.isReliableFor(settings.includePickup) -> Triple(
+                Verdict.CAUTION,
+                listOf("Date incomplete (${offer.confidence}%) — verifică manual"),
+                listOf(RULE_UNREADABLE)
+            )
+
+            implausible != null -> Triple(
+                // Never a verdict on impossible arithmetic: a mis-read minute
+                // makes every ratio below it wrong by the same factor, and the
+                // result looks confident rather than broken.
+                Verdict.CAUTION,
+                listOf("Citire greșită — $implausible. Verifică manual."),
+                listOf(RULE_UNREADABLE)
+            )
+
+            else -> {
+                val blockers = hardFilterFailures(offer, settings)
+                if (blockers.isNotEmpty()) {
+                    Triple(Verdict.REJECT, blockers.map { it.message }, blockers.map { it.rule })
+                } else {
+                    val (v, r) = decide(netRonPerHour, settings)
+                    Triple(
+                        v,
+                        listOf(r),
+                        if (v == Verdict.REJECT) listOf(RULE_HOURLY) else emptyList()
+                    )
+                }
             }
         }
 
@@ -124,6 +171,7 @@ object OfferCalculator {
             estimatedProfit = estimatedProfit,
             verdict = verdict,
             reasons = reasons,
+            failedRules = failedRules,
             effectiveHourlyTarget = effectiveTarget(settings)
         )
     }
@@ -138,19 +186,25 @@ object OfferCalculator {
      * A rule is consulted only when its switch is on — the stored amount is
      * irrelevant otherwise.
      */
-    private fun hardFilterFailures(offer: RideOffer, settings: RideSettings): List<String> {
-        val failures = mutableListOf<String>()
+    /** A broken rule: its stable name, and the sentence shown to the driver. */
+    data class RuleFailure(val rule: String, val message: String)
+
+    private fun hardFilterFailures(offer: RideOffer, settings: RideSettings): List<RuleFailure> {
+        val failures = mutableListOf<RuleFailure>()
         val price = offer.price
 
         // Rule 1 — the floor under the fare itself.
         if (settings.minimumFareEnabled && settings.minimumFare > 0 &&
             price != null && price < settings.minimumFare
         ) {
-            failures += String.format(
-                RO,
-                "%.2f RON, sub minimul de %.0f RON pe cursă",
-                price,
-                settings.minimumFare
+            failures += RuleFailure(
+                RULE_MIN_FARE,
+                String.format(
+                    RO,
+                    "%.2f RON, sub minimul de %.0f RON pe cursă",
+                    price,
+                    settings.minimumFare
+                )
             )
         }
 
@@ -163,12 +217,15 @@ object OfferCalculator {
         ) {
             val required = tripKm * settings.minCostPerKm
             if (price < required) {
-                failures += String.format(
-                    RO,
-                    "Sub costul minim: %s RON necesari (%s km × %s RON/km)",
-                    trim(required),
-                    trim(tripKm),
-                    trim(settings.minCostPerKm)
+                failures += RuleFailure(
+                    RULE_COST_PER_KM,
+                    String.format(
+                        RO,
+                        "Sub costul minim: %s RON necesari (%s km × %s RON/km)",
+                        trim(required),
+                        trim(tripKm),
+                        trim(settings.minCostPerKm)
+                    )
                 )
             }
         }
@@ -178,11 +235,14 @@ object OfferCalculator {
         if (settings.maxPickupKmEnabled && settings.maxPickupKm > 0 &&
             pickupKm != null && pickupKm > settings.maxPickupKm
         ) {
-            failures += String.format(
-                RO,
-                "Preluare prea departe: %s km / maxim %s km",
-                trim(pickupKm),
-                trim(settings.maxPickupKm)
+            failures += RuleFailure(
+                RULE_PICKUP,
+                String.format(
+                    RO,
+                    "Preluare prea departe: %s km / maxim %s km",
+                    trim(pickupKm),
+                    trim(settings.maxPickupKm)
+                )
             )
         }
 
@@ -190,11 +250,14 @@ object OfferCalculator {
         if (settings.maxTripKmEnabled && settings.maxTripKm > 0 &&
             tripKm != null && tripKm > settings.maxTripKm
         ) {
-            failures += String.format(
-                RO,
-                "Cursa prea lungă: %s km / maxim %s km",
-                trim(tripKm),
-                trim(settings.maxTripKm)
+            failures += RuleFailure(
+                RULE_TRIP_LENGTH,
+                String.format(
+                    RO,
+                    "Cursa prea lungă: %s km / maxim %s km",
+                    trim(tripKm),
+                    trim(settings.maxTripKm)
+                )
             )
         }
 
@@ -229,17 +292,13 @@ object OfferCalculator {
         val target = effectiveTarget(settings)
         val shortfall = target - netRonPerHour
         // Say so on every verdict: the same fare reads very differently
-        // depending on whether the drive to the rider is counted.
+        // depending on whether the drive to the rider is counted, and on how
+        // many rides the driver actually fits into an hour.
         val suffix = buildString {
             if (!settings.includePickup) append(" (fără pickup)")
-            if (settings.utilizationPercent in 1..99) {
-                // Rounded, not truncated: "%.0f" is used for the same number
-                // further along, and 52.6 printed as both 52 and 53 in one
-                // sentence reads as a bug in the maths.
-                append(
-                    " [prag ${Math.round(target)} la ${settings.utilizationPercent}% ocupare]"
-                )
-            }
+            // The pace is what turns a single ride into an hour, so the figure
+            // is meaningless without saying which pace produced it.
+            append(String.format(RO, " la %.1f curse/oră", settings.ridesPerHour))
         }
 
         if (netRonPerHour < target) {

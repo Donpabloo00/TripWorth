@@ -41,7 +41,8 @@ class OfferCalculatorTest {
         assertEquals(8.1, a.totalKm!!, 0.001)
         assertEquals(17, a.totalMinutes)
         assertEquals(2.12, a.ronPerKm!!, 0.01)
-        assertEquals(60.71, a.ronPerHour!!, 0.01)
+        // 17 minutes of driving, but a 24-minute slot at 2.5 rides an hour.
+        assertEquals(43.0, a.ronPerHour!!, 0.01)
         assertEquals(5.50, a.fuelCost!!, 0.01)
         assertEquals(11.70, a.estimatedProfit!!, 0.01)
         assertEquals(Verdict.REJECT, a.verdict)
@@ -92,17 +93,17 @@ class OfferCalculatorTest {
 
     @Test
     fun `the verdict runs on take-home, not gross`() {
-        val a = OfferCalculator.analyze(offer(), settings)
-        // 17.20 gross over 17 min reads 60.71 RON/h, which would clear a
-        // 60 bar — but fuel leaves only 41 RON/h in hand.
-        assertEquals(60.71, a.ronPerHour!!, 0.01)
-        assertEquals(41.29, a.netRonPerHour!!, 0.01)
+        // 26 RON in a 24-minute slot grosses 65 RON/h and would clear the
+        // 60 bar — but fuel leaves only 51 in hand.
+        val a = OfferCalculator.analyze(offer(price = 26.0), settings)
+        assertEquals(65.0, a.ronPerHour!!, 0.01)
+        assertEquals(51.25, a.netRonPerHour!!, 0.01)
         assertEquals(Verdict.REJECT, a.verdict)
     }
 
     @Test
     fun `settings changes move the verdict`() {
-        val relaxed = settings.copy(minimumRonPerHour = 35.0)
+        val relaxed = settings.copy(minimumRonPerHour = 25.0)
         assertEquals(Verdict.ACCEPT, OfferCalculator.analyze(offer(), relaxed).verdict)
     }
 
@@ -117,11 +118,15 @@ class OfferCalculatorTest {
 
     @Test
     fun `excluding the pickup leg flatters the hourly figure`() {
-        val included = OfferCalculator.analyze(offer(), settings)
-        val excluded = OfferCalculator.analyze(offer(), settings.copy(includePickup = false))
-        // Same fare, same driving — only the accounting changed.
-        assertEquals(41.29, included.netRonPerHour!!, 0.01)
-        assertEquals(68.34, excluded.netRonPerHour!!, 0.01)
+        // A goal the two sides of the accounting fall either side of, so the
+        // difference shows up as a changed verdict and not just a nicer number.
+        val goal = settings.copy(minimumRonPerHour = 30.0)
+        val included = OfferCalculator.analyze(offer(), goal)
+        val excluded = OfferCalculator.analyze(offer(), goal.copy(includePickup = false))
+        // Same fare, same driving — only the accounting changed. Dropping the
+        // approach removes its fuel, and nothing else.
+        assertEquals(29.25, included.netRonPerHour!!, 0.01)
+        assertEquals(34.17, excluded.netRonPerHour!!, 0.01)
         assertEquals(Verdict.REJECT, included.verdict)
         assertEquals(Verdict.ACCEPT, excluded.verdict)
     }
@@ -134,32 +139,74 @@ class OfferCalculatorTest {
     }
 
     @Test
-    fun `occupancy raises the bar a single ride has to clear`() {
-        // 60 RON/h across a shift that is only 70% on-trip needs 86 per ride.
-        val at70 = settings.copy(utilizationPercent = 70)
-        assertEquals(85.71, OfferCalculator.effectiveTarget(at70), 0.01)
-        assertEquals(60.0, OfferCalculator.effectiveTarget(settings), 0.01)
+    fun `the real 16 lei ride no longer claims 120 RON an hour`() {
+        // Captured from the driver's phone: 16.91 RON, 4.2 km, 7 minutes,
+        // with the approach excluded. The old model extrapolated the seven
+        // minutes across a whole hour and printed 120 RON/oră NET — a figure
+        // that assumed 8.5 such jobs chained without a pause.
+        val real = offer(price = 16.91, tripKm = 4.2, tripMin = 7)
+        val withoutPickup = settings.copy(includePickup = false, fuelPricePerLiter = 9.90)
+        val a = OfferCalculator.analyze(real, withoutPickup)
+
+        // 14.00 RON profit across the 24-minute slot 2.5 rides an hour implies.
+        assertEquals(35.0, a.netRonPerHour!!, 0.2)
+        assertEquals(42.3, a.ronPerHour!!, 0.2)
     }
 
     @Test
-    fun `a ride that clears the goal can still fail on occupancy`() {
-        // 65 RON/h net clears a 60 goal, but not the 86 the shift needs.
-        // Same 17 minutes overall, split across both legs: a 2.9 km approach
-        // in zero minutes is not a journey the plausibility check believes.
+    fun `the threshold is simply the goal, with no hidden correction`() {
+        assertEquals(60.0, OfferCalculator.effectiveTarget(settings), 0.01)
+        assertEquals(
+            90.0,
+            OfferCalculator.effectiveTarget(settings.copy(minimumRonPerHour = 90.0)),
+            0.01
+        )
+    }
+
+    @Test
+    fun `a short ride occupies the whole slot its pace implies`() {
+        // 8 minutes of driving, but at 2.5 rides an hour the shift only fits
+        // one such job every 24 minutes — the wait is part of its cost.
+        assertEquals(24.0, OfferCalculator.slotMinutes(8, settings), 0.01)
+        // Six rides an hour leaves a 10-minute slot, shorter than the ride,
+        // so the ride's own duration governs.
+        assertEquals(
+            10.0,
+            OfferCalculator.slotMinutes(8, settings.copy(ridesPerHour = 6.0)),
+            0.01
+        )
+    }
+
+    @Test
+    fun `a long ride is never charged for idle time it cannot have`() {
+        // 45 minutes does not fit into an hour 2.5 times, so there is no wait
+        // to add: the slot is the ride itself.
+        assertEquals(45.0, OfferCalculator.slotMinutes(45, settings), 0.01)
+    }
+
+    @Test
+    fun `pace decides the verdict, not just the number shown`() {
+        // 24 RON over 17 minutes: a fine rate in isolation, thin once the
+        // shift only turns over 1.5 such jobs an hour.
         val ride = offer(price = 24.0, pickupMin = 3, tripMin = 14)
-        val full = OfferCalculator.analyze(ride, settings)
-        val partial = OfferCalculator.analyze(ride, settings.copy(utilizationPercent = 70))
-        assertEquals(Verdict.ACCEPT, full.verdict)
-        assertEquals(Verdict.REJECT, partial.verdict)
+        val brisk = OfferCalculator.analyze(ride, settings.copy(ridesPerHour = 4.0))
+        val slow = OfferCalculator.analyze(ride, settings.copy(ridesPerHour = 1.5))
+
+        assertEquals(Verdict.ACCEPT, brisk.verdict)
+        assertEquals(Verdict.REJECT, slow.verdict)
+        // The same ride, two pictures of the hour it belongs to.
+        assertTrue(brisk.netRonPerHour!! > slow.netRonPerHour!!)
     }
 
     @Test
     fun `a fare below the floor is rejected whatever the ratios say`() {
-        // 12 RON over 2 minutes is a superb hourly rate and a terrible job.
+        // A 2-minute, 12 RON job. Against a modest 25 RON/h goal the ratios
+        // pass it; the floor is what says a slot is worth more than 12 lei.
+        val modest = settings.copy(minimumRonPerHour = 25.0)
         val quick = offer(price = 12.0, pickupKm = 0.1, pickupMin = 1, tripKm = 0.5, tripMin = 1)
-        assertEquals(Verdict.ACCEPT, OfferCalculator.analyze(quick, settings).verdict)
+        assertEquals(Verdict.ACCEPT, OfferCalculator.analyze(quick, modest).verdict)
 
-        val withFloor = settings.copy(minimumFareEnabled = true, minimumFare = 15.0)
+        val withFloor = modest.copy(minimumFareEnabled = true, minimumFare = 15.0)
         val a = OfferCalculator.analyze(quick, withFloor)
         assertEquals(Verdict.REJECT, a.verdict)
         assertTrue(a.reason.contains("sub minimul"))
@@ -189,17 +236,12 @@ class OfferCalculatorTest {
     }
 
     @Test
-    fun `the threshold reads the same everywhere in one sentence`() {
-        // 50 / 0.95 = 52.63, once printed truncated as 52 and once rounded
-        // as 53 — the same bar, two numbers, in a single line of text.
-        val awkward = settings.copy(minimumRonPerHour = 50.0, utilizationPercent = 95)
-        val a = OfferCalculator.analyze(offer(price = 60.0), awkward)
-
-        val numbers = Regex("""\d+""").findAll(a.reason).map { it.value }.toList()
-        val threshold = "53"
-        assertTrue(a.reason, a.reason.contains("prag $threshold"))
-        assertTrue(a.reason, !a.reason.contains("prag 52"))
-        assertTrue(a.reason + numbers, numbers.contains(threshold))
+    fun `the verdict states the pace that produced its figure`() {
+        // The hourly number is meaningless without it: the same fare reads
+        // very differently at 1.5 rides an hour and at 4.
+        val a = OfferCalculator.analyze(offer(price = 60.0), settings)
+        assertTrue(a.reason, a.reason.contains("curse/oră"))
+        assertTrue(a.reason, !a.reason.contains("ocupare"))
     }
 
     @Test

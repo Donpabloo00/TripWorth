@@ -218,7 +218,9 @@ class PickupTripSeparationTest {
         assertEquals(17, analysis.totalMinutes)
         // 17.20 / 8.1, not 17.20 / 5.2.
         assertEquals(2.12, analysis.ronPerKm!!, 0.01)
-        assertEquals(60.71, analysis.ronPerHour!!, 0.01)
+        // 17.20 over a 24-minute slot (2.5 rides an hour), not over the 17
+        // minutes of driving alone — the wait after it is part of its cost.
+        assertEquals(43.0, analysis.ronPerHour!!, 0.01)
     }
 
     @Test
