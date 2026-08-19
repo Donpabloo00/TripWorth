@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RideGo</string>
+    <string name="slogan">Decizii mai rapide. Curse mai profitabile.</string>
+    <string name="privacy_note">Datele capturate sunt procesate local pe dispozitiv.</string>
+    <string name="capture_channel_name">Citire ecran</string>
+</resources>
