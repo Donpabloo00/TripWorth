@@ -31,7 +31,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import com.ridego.app.BuildConfig
+import androidx.compose.ui.res.stringResource
+import com.tripworth.app.BuildConfig
+import com.tripworth.app.R
 import com.ridego.app.data.AppState
 import com.ridego.app.data.OverlayDiagnostics
 import com.ridego.app.overlay.OverlayService
@@ -176,7 +178,7 @@ fun OverlayDebugScreen(onBack: () -> Unit) {
                 // anything else is inferred from the last screen it read.
                 StatusLine(
                     "Current foreground",
-                    if (appForeground) "RIDEGO"
+                    if (appForeground) stringResource(R.string.brand_banner)
                     else state.parsePlatform?.takeIf { it != "NECUNOSCUT" } ?: "OTHER / UNKNOWN",
                     !appForeground
                 )
@@ -337,8 +339,7 @@ fun OverlayDebugScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(10.dp))
         Text(
-            "Apasă, apoi ieși imediat din RideGo (Home sau Uber). Bannerul de " +
-                "test trebuie să apară sus timp de 15 secunde.",
+            stringResource(R.string.overlay_test_hint, stringResource(R.string.app_name)),
             style = MaterialTheme.typography.bodyMedium,
             color = RideGray
         )
@@ -446,7 +447,7 @@ private fun boolLabel(value: Boolean?): String = when (value) {
 
 private fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("RideGo overlay debug", text))
+    clipboard.setPrimaryClip(ClipData.newPlainText("TripWorth overlay debug", text))
 }
 
 /**
@@ -454,7 +455,7 @@ private fun copyToClipboard(context: Context, text: String) {
  * can reach it; older versions fall back to the app's external files dir.
  */
 private fun exportDebug(context: Context, text: String): String {
-    val name = "ridego_overlay_debug_" +
+    val name = "tripworth_overlay_debug_" +
         SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".txt"
 
     return try {

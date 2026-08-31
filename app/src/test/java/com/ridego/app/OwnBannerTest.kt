@@ -58,6 +58,12 @@ class OwnBannerTest {
         assertTrue(OwnBannerDetector.isOwnBanner("Trage pentru a muta"))
         assertTrue(OwnBannerDetector.isOwnBanner("120 RON/oră NET"))
         assertTrue(OwnBannerDetector.isOwnBanner("Cursa prea lungă: 42 km"))
+        assertTrue(OwnBannerDetector.isOwnBanner("TRIPWORTH • UBER"))
+        assertTrue(OwnBannerDetector.isOwnBanner("VERDICTCURSĂ • UBER"))
+        assertTrue(OwnBannerDetector.isOwnBanner("RIDEGO • UBER"))
+        assertTrue(OwnBannerDetector.isOwnBanner("● CURSĂ BUNĂ"))
+        assertTrue(OwnBannerDetector.isOwnBanner("7,80 COST COMB."))
+        assertTrue(OwnBannerDetector.isOwnBanner("Încasezi 43,50 RON"))
     }
 
     @Test

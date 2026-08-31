@@ -36,7 +36,7 @@ import com.ridego.app.ui.screens.OptimizationScreen
 import com.ridego.app.ui.screens.OverlayDebugScreen
 import com.ridego.app.ui.screens.SettingsScreen
 import com.ridego.app.ui.theme.RideBlack
-import com.ridego.app.ui.theme.RideGoTheme
+import com.ridego.app.ui.theme.TripWorthTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -45,20 +45,20 @@ class MainActivity : ComponentActivity() {
         AppState.init(this)
         requestNotificationPermissionIfNeeded()
         setContent {
-            RideGoTheme {
+            TripWorthTheme {
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(RideBlack),
                     color = RideBlack
                 ) {
-                    RideGoNavHost()
+                    TripWorthNavHost()
                 }
             }
         }
     }
 
-    // Foreground state is owned by ProcessLifecycleOwner in RideGoApp; a
+    // Foreground state is owned by ProcessLifecycleOwner in TripWorthApp; a
     // per-activity onResume/onPause would also fire on rotation and would
     // disagree with it during transitions.
 
@@ -82,7 +82,7 @@ private object Routes {
 }
 
 @Composable
-private fun RideGoNavHost() {
+private fun TripWorthNavHost() {
     val navController = rememberNavController()
     val context = LocalContext.current
 
@@ -135,6 +135,7 @@ private fun RideGoNavHost() {
                 onOpenDemo = { navController.navigate(Routes.DEMO) },
                 onOpenHistory = { navController.navigate(Routes.HISTORY) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onOpenConfig = { navController.navigate(Routes.OPTIMIZATION) },
                 onOpenDebug = { navController.navigate(Routes.DEBUG) }
             )
         }

@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "RideGo"
+rootProject.name = "TripWorth"
 include(":app")

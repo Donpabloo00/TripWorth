@@ -2,9 +2,9 @@ package com.ridego.app.data
 
 import android.app.ActivityManager
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.os.PowerManager
 import android.provider.Settings
+import com.tripworth.app.R
 import java.io.File
 
 /**
@@ -50,15 +50,15 @@ object DeviceHealth {
     private fun batteryCheck(context: Context): Check {
         val exempt = isBatteryExempt(context)
         return Check(
-            title = "Optimizare baterie",
+            title = "Baterie fără restricții",
             detail = if (exempt) {
-                "RideGo e exceptat. Citirea nu va fi oprită de sistem în timpul turei."
+                context.getString(R.string.battery_exempt_ok, context.getString(R.string.app_name))
             } else {
                 "Android poate opri citirea în mijlocul turei, fără niciun avertisment. " +
                     "Pe Samsung se întâmplă des după o oră de rulare."
             },
             ok = exempt,
-            actionLabel = if (exempt) null else "EXCEPTEAZĂ RIDEGO",
+            actionLabel = if (exempt) null else "Deschide",
             action = if (exempt) null else Action.BATTERY_OPTIMIZATION
         )
     }
@@ -68,12 +68,12 @@ object DeviceHealth {
         return Check(
             title = "Afișare peste alte aplicații",
             detail = if (granted) {
-                "Acordată. Bannerul poate apărea peste Uber și Bolt."
+                "Acordată. Cardul de analiză apare sus, peste Uber și Bolt."
             } else {
-                "Lipsește. Fără ea nu vezi niciun verdict cât ești în Uber."
+                "Necesară pentru Bolt și Uber — fără ea nu vezi verdictul pe cursă."
             },
             ok = granted,
-            actionLabel = if (granted) null else "ACORDĂ",
+            actionLabel = if (granted) null else "Deschide",
             action = if (granted) null else Action.OVERLAY_PERMISSION
         )
     }
@@ -90,7 +90,7 @@ object DeviceHealth {
                     "fără ea, sistemul îl poate opri mai devreme."
             },
             ok = enabled,
-            actionLabel = if (enabled) null else "ACTIVEAZĂ",
+            actionLabel = if (enabled) null else "Deschide",
             action = if (enabled) null else Action.NOTIFICATION_SETTINGS
         )
     }
@@ -100,7 +100,7 @@ object DeviceHealth {
         val files = sizeOf(context.filesDir)
         val total = cache + files
         return Check(
-            title = "Spațiu ocupat de RideGo",
+            title = context.getString(R.string.storage_title, context.getString(R.string.app_name)),
             detail = "Cache ${format(cache)}, date ${format(files)}. " +
                 "Doar fișierele proprii — o aplicație nu poate șterge cache-ul altora.",
             ok = total < 50L * 1024 * 1024,
@@ -136,13 +136,22 @@ object DeviceHealth {
      * any amount of memory it could free.
      */
     private val PROTECTED = setOf(
-        "com.ridego.app",
+        "com.tripworth.app",
         "com.ubercab.driver",
         "ee.mtakso.driver",
         "com.ubercab",
         "com.google.android.apps.maps",
         "com.waze"
     )
+
+    /** Common background apps — fixed list avoids QUERY_ALL_PACKAGES on Play Store. */
+    private val OPTIONAL_KILL_TARGETS = listOf(
+        "com.facebook.katana",
+        "com.instagram.android",
+        "com.zhiliaoapp.musically",
+        "com.snapchat.android",
+        "com.spotify.music"
+    ).filterNot { PROTECTED.contains(it) }
 
     fun memory(context: Context): Memory {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -152,21 +161,13 @@ object DeviceHealth {
     }
 
     /**
-     * Installed third-party apps, minus the protected ones.
+     * Fixed package list for optional memory cleanup — no installed-app scan.
      *
-     * Android 8 removed the ability to see which apps are actually running —
-     * getRunningAppProcesses returns only the caller — so this is everything
-     * that *could* be running, not what is.
+     * Android 11+ blocks broad package visibility; [killBackgroundProcesses]
+     * still works per package name when the app is installed.
      */
-    fun killableApps(context: Context): List<String> {
-        val pm = context.packageManager
-        return runCatching {
-            pm.getInstalledApplications(0)
-                .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
-                .map { it.packageName }
-                .filterNot { PROTECTED.contains(it) }
-        }.getOrDefault(emptyList())
-    }
+    fun killableApps(@Suppress("UNUSED_PARAMETER") context: Context): List<String> =
+        OPTIONAL_KILL_TARGETS
 
     /**
      * Asks Android to stop background processes of each app. The system may

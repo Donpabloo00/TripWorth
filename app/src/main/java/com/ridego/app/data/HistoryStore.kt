@@ -33,7 +33,7 @@ data class HistoryEntry(
 class HistoryStore(context: Context) {
 
     private val prefs = context.applicationContext
-        .getSharedPreferences("ridego_history", Context.MODE_PRIVATE)
+        .getSharedPreferences("tripworth_history", Context.MODE_PRIVATE)
 
     fun load(): List<HistoryEntry> {
         val raw = prefs.getString(KEY, null) ?: return emptyList()

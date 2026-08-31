@@ -149,7 +149,7 @@ object AppState {
             OcrArchive.record(rawText, "IGNORAT — propriul banner (\"$marker\")", _settings.value.debugMode)
             OverlayDiagnostics.flowStop(
                 "2 OWN_BANNER_TEXT",
-                "cadrul conține bannerul RideGo (\"$marker\") — ignorat"
+                "frame contains TripWorth banner (\"$marker\") — ignored"
             )
             return null
         }

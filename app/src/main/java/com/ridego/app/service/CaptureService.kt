@@ -15,7 +15,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import com.ridego.app.MainActivity
-import com.ridego.app.R
+import com.tripworth.app.R
 import com.ridego.app.capture.ScreenCapturer
 import com.ridego.app.data.AppState
 import com.ridego.app.data.OverlayDiagnostics
@@ -109,7 +109,7 @@ class CaptureService : Service() {
                     bannerWasVisible = true
                     OverlayDiagnostics.flowStop(
                         "0 OWN_BANNER",
-                        "bannerul RideGo e vizibil — cadrul e ignorat"
+                        "TripWorth banner visible — frame ignored"
                     )
                     continue
                 }
@@ -134,7 +134,7 @@ class CaptureService : Service() {
                     // capture we care about.
                     OverlayDiagnostics.flowStop(
                         "0 SELF_SCREEN",
-                        "RideGo în prim-plan — cadrul e ignorat, motorul rămâne pornit"
+                        "${getString(R.string.app_name)} în prim-plan — cadrul e ignorat, motorul rămâne pornit"
                     )
                     capturer?.drop()
                     continue
@@ -179,7 +179,7 @@ class CaptureService : Service() {
                 if (AppState.appInForeground.value) {
                     OverlayDiagnostics.flow(
                         "8 OUTPUT",
-                        "RideGo în prim-plan — rezultatul merge în UI, fără overlay"
+                        "${getString(R.string.app_name)} în prim-plan — rezultatul merge în UI, fără overlay"
                     )
                     OverlayDiagnostics.setOutputs(uiVisible = true, overlayRequested = false)
                 } else {
@@ -271,7 +271,7 @@ class CaptureService : Service() {
     }
 
     companion object {
-        private const val CHANNEL_ID = "ridego_capture"
+        private const val CHANNEL_ID = "tripworth_capture"
         private const val NOTIFICATION_ID = 1001
 
         /** ~1.5 reads per second: fast enough for an offer that shows for 10s. */
@@ -279,7 +279,7 @@ class CaptureService : Service() {
 
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
-        const val ACTION_STOP = "com.ridego.app.STOP"
+        const val ACTION_STOP = "com.tripworth.app.STOP"
 
         fun start(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, CaptureService::class.java)

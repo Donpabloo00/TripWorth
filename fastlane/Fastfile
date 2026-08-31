@@ -1,0 +1,32 @@
+# TripWorth — Google Play upload
+# Prerequisites: gem install fastlane
+# + Service account JSON at play-store/google-play-service-account.json
+# + App created once in Play Console (com.tripworth.app)
+
+default_platform(:android)
+
+platform :android do
+  desc "Upload AAB to Internal Testing track"
+  lane :internal do
+    upload_to_play_store(
+      track: "internal",
+      aab: "app/build/outputs/bundle/release/app-release.aab",
+      skip_upload_apk: true,
+      skip_upload_metadata: false,
+      skip_upload_images: false,
+      skip_upload_screenshots: false,
+      release_status: "completed"
+    )
+  end
+
+  desc "Upload metadata and images only (no new build)"
+  lane :metadata do
+    upload_to_play_store(
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: false,
+      skip_upload_images: false,
+      skip_upload_screenshots: false
+    )
+  end
+end

@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,12 +14,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,41 +35,42 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.res.stringResource
+import com.tripworth.app.R
 import com.ridego.app.data.AppState
 import com.ridego.app.data.DeviceHealth
 import com.ridego.app.ui.PrimaryButton
-import com.ridego.app.ui.RideCard
-import com.ridego.app.ui.SectionLabel
 import com.ridego.app.ui.theme.RideGray
 import com.ridego.app.ui.theme.RideGreen
 import com.ridego.app.ui.theme.RideOrange
+import com.ridego.app.ui.theme.RideSurface
 import com.ridego.app.ui.theme.RideWhite
 import com.ridego.app.ui.theme.RideYellow
 
 /**
- * Checks the system settings that decide whether RideGo survives a shift.
- *
- * Not a phone cleaner: since Android 6 an app cannot clear another app's
- * cache, and "freeing RAM" makes Android slower, because the OS uses spare
- * memory as cache. Everything on this screen is real.
+ * Setup checklist styled like RideCheetah "Configurare": numbered steps,
+ * progress bar, green checks for done items, Deschide for the rest.
  */
 @Composable
 fun OptimizationScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val appName = stringResource(R.string.app_name)
     val history by AppState.history.collectAsState()
+    val settings by AppState.settings.collectAsState()
     var refreshToken by remember { mutableStateOf(0) }
     var lastAction by remember { mutableStateOf<String?>(null) }
-    var killResult by remember { mutableStateOf<DeviceHealth.KillResult?>(null) }
 
-    // Permissions are granted in Android's own screens, so the state has to
-    // be re-read when the driver comes back rather than cached.
     val lifecycleOwner = LocalLifecycleOwner.current
-    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) refreshToken++
         }
@@ -66,10 +78,19 @@ fun OptimizationScreen(onBack: () -> Unit) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val checks = remember(refreshToken, history.size) {
-        DeviceHealth.checks(context, history.size)
+    // Notifications → overlay → battery — the Configurare checklist.
+    val setupSteps = remember(refreshToken, history.size) {
+        val all = DeviceHealth.checks(context, history.size)
+        listOfNotNull(
+            all.find { it.title == "Notificări" },
+            all.find { it.action == DeviceHealth.Action.OVERLAY_PERMISSION },
+            all.find { it.action == DeviceHealth.Action.BATTERY_OPTIMIZATION }
+        )
     }
-    val problems = checks.count { !it.ok }
+
+    val done = setupSteps.count { it.ok }
+    val total = setupSteps.size.coerceAtLeast(1)
+    val progress = done.toFloat() / total
 
     Column(
         modifier = Modifier
@@ -77,154 +98,173 @@ fun OptimizationScreen(onBack: () -> Unit) {
             .verticalScroll(rememberScrollState())
             .padding(20.dp)
     ) {
-        Text("OPTIMIZARE", style = MaterialTheme.typography.headlineMedium, color = RideYellow)
-        Spacer(Modifier.height(8.dp))
         Text(
-            if (problems == 0) "Totul e în regulă."
-            else "$problems ${if (problems == 1) "problemă" else "probleme"} de rezolvat.",
-            style = MaterialTheme.typography.titleLarge,
-            color = if (problems == 0) RideGreen else RideOrange
+            "Configurare",
+            style = MaterialTheme.typography.headlineMedium,
+            color = RideOrange
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (done == total) "Totul e gata pentru tură."
+            else stringResource(R.string.setup_intro, appName),
+            style = MaterialTheme.typography.bodyMedium,
+            color = RideGray
+        )
+
+        Spacer(Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(50)),
+                color = RideOrange,
+                trackColor = RideSurface
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "$done/$total",
+                style = MaterialTheme.typography.titleMedium,
+                color = RideYellow
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        setupSteps.forEachIndexed { index, check ->
+            SetupStepCard(
+                number = index + 1,
+                check = check,
+                onOpen = {
+                    check.action?.let { action ->
+                        lastAction = runAction(context, action)
+                        refreshToken++
+                    }
+                }
+            )
+            Spacer(Modifier.height(10.dp))
+        }
+
+        // Auto-start style toggle — maps to overlay + autoRead.
+        SetupToggleCard(
+            title = "Pornire automată",
+            detail = stringResource(R.string.setup_auto_start_detail, appName),
+            checked = settings.autoRead && settings.overlayEnabled,
+            onChecked = { on ->
+                AppState.updateSettings(
+                    settings.copy(autoRead = on, overlayEnabled = on)
+                )
+            }
+        )
+
+        lastAction?.let {
+            Spacer(Modifier.height(12.dp))
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = RideGreen)
+        }
+
+        Spacer(Modifier.height(24.dp))
+        PrimaryButton(
+            text = if (done == total) "GATA" else "CONTINUĂ",
+            onClick = onBack
         )
 
         Spacer(Modifier.height(20.dp))
-
-        checks.forEach { check ->
-            RideCard {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            check.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = RideWhite,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            if (check.ok) "OK" else "!",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = if (check.ok) RideGreen else RideOrange
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        check.detail,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = RideGray
-                    )
-                    val label = check.actionLabel
-                    val action = check.action
-                    if (label != null && action != null) {
-                        Spacer(Modifier.height(12.dp))
-                        PrimaryButton(
-                            text = label,
-                            onClick = {
-                                lastAction = runAction(context, action)
-                                refreshToken++
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("ÎNAPOI LA SETĂRI")
         }
+        Spacer(Modifier.height(16.dp))
+    }
+}
 
-        lastAction?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = RideGreen)
-            Spacer(Modifier.height(12.dp))
-        }
-
-        SectionLabel("Memorie")
-        Spacer(Modifier.height(10.dp))
-        RideCard {
-            Column {
-                val memory = remember(refreshToken) { DeviceHealth.memory(context) }
-                Text(
-                    "${DeviceHealth.format(memory.availableBytes)} liberi",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = RideYellow
-                )
-                Text(
-                    "din ${DeviceHealth.format(memory.totalBytes)} total",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = RideGray
-                )
-
-                Spacer(Modifier.height(14.dp))
-                PrimaryButton(
-                    text = "OPREȘTE APLICAȚIILE DIN FUNDAL",
-                    onClick = {
-                        val result = DeviceHealth.killBackgroundApps(context)
-                        killResult = result
-                        refreshToken++
-                    }
-                )
-
-                killResult?.let { result ->
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "${DeviceHealth.format(result.freeBefore)} → " +
-                            "${DeviceHealth.format(result.freeAfter)}",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = if (result.gained > 0) RideGreen else RideOrange
-                    )
-                    Text(
-                        if (result.gained > 0) {
-                            "${DeviceHealth.format(result.gained)} eliberați, " +
-                                "${result.appsTargeted} aplicații vizate."
-                        } else {
-                            "Nimic eliberat. Android a refuzat oprirea sau aplicațiile " +
-                                "au repornit imediat — ${result.appsTargeted} vizate."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = RideGray
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    "Uber, Bolt, Maps, Waze și RideGo sunt protejate — nu se opresc " +
-                        "niciodată de aici.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = RideGray
-                )
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "Citește cifra de mai sus înainte și după. Pe Android, memoria " +
-                        "liberă nu e un lucru bun în sine — sistemul o umple la loc cu " +
-                        "cache, iar aplicațiile oprite repornesc. Dacă vezi că nu se " +
-                        "schimbă mai nimic, asta e realitatea, nu un defect.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = RideOrange
-                )
-            }
-        }
-
-        Spacer(Modifier.height(20.dp))
-
-        SectionLabel("Ce nu poate face RideGo")
-        Spacer(Modifier.height(8.dp))
-        RideCard {
+@Composable
+private fun SetupStepCard(
+    number: Int,
+    check: DeviceHealth.Check,
+    onOpen: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = if (check.ok) RideGreen.copy(alpha = 0.5f) else RideOrange.copy(alpha = 0.7f),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .background(RideSurface, RoundedCornerShape(14.dp))
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(
+                    if (check.ok) RideGreen else RideOrange,
+                    CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
             Text(
-                "Nu poate șterge cache-ul altor aplicații — Android interzice asta din " +
-                    "versiunea 6, oricărei aplicații nesemnate de producător.\n\n" +
-                    "Nu „eliberează RAM\". Pe Android memoria liberă e folosită drept " +
-                    "cache; golind-o, aplicațiile repornesc de la zero și consumi mai " +
-                    "multă baterie, nu mai puțină.\n\n" +
-                    "Nu închide aplicații din fundal. Android le repornește imediat.\n\n" +
-                    "Aplicațiile care promit astea fac, în general, animații.",
+                if (check.ok) "✓" else number.toString(),
+                color = if (check.ok) Color.White else Color.Black,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                check.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = RideWhite
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                check.detail,
                 style = MaterialTheme.typography.bodyMedium,
                 color = RideGray
             )
         }
+        if (!check.ok && check.action != null) {
+            Spacer(Modifier.width(8.dp))
+            OutlinedButton(onClick = onOpen) {
+                Text("Deschide", color = RideOrange)
+            }
+        }
+    }
+}
 
-        Spacer(Modifier.height(12.dp))
-        OutlinedButton(
-            onClick = { runAction(context, DeviceHealth.Action.APP_DETAILS) },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("SETĂRILE ANDROID PENTRU RIDEGO") }
-
-        Spacer(Modifier.height(20.dp))
-        OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("ÎNAPOI") }
-        Spacer(Modifier.height(20.dp))
+@Composable
+private fun SetupToggleCard(
+    title: String,
+    detail: String,
+    checked: Boolean,
+    onChecked: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, RideOrange.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+            .background(RideSurface, RoundedCornerShape(14.dp))
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = RideWhite)
+            Spacer(Modifier.height(2.dp))
+            Text(detail, style = MaterialTheme.typography.bodyMedium, color = RideGray)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onChecked,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = RideOrange
+            )
+        )
     }
 }
 

@@ -7,7 +7,17 @@ app/build/
 # Machine-specific: holds the absolute path to this SDK install.
 local.properties
 
+# Release signing — never commit real passwords.
+keystore.properties
+release/
+play-store/google-play-service-account.json
+
 # IDE
 .idea/
 *.iml
 .DS_Store
+
+# Local debug captures — not part of the product.
+/uidump*.xml
+/window_dump.xml
+/ridego_*.png

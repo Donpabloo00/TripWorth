@@ -16,6 +16,7 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.tripworth.app.R
 import com.ridego.app.calculator.OfferAnalysis
 import com.ridego.app.calculator.OverlayAnchor
 import com.ridego.app.calculator.Verdict
@@ -34,16 +35,14 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Draggable card showing the latest verdict on top of Uber/Bolt.
+ * Analysis card drawn over Uber/Bolt — sits at the top so the platform's
+ * own offer sheet at the bottom stays readable and tappable.
  *
- * Plain Android views rather than Compose: a window-manager overlay has no
- * lifecycle owner, and wiring one up buys nothing here.
- *
- * It renders an [OfferAnalysis] and computes nothing of its own.
+ * Layout mirrors the RideCheetah model: brand + verdict, big RON/km,
+ * hourly / profit / fuel grid, then pickup earnings.
  */
 class OverlayService : Service() {
 
-    /** Appearance inputs that require rebuilding the view tree when changed. */
     private data class Appearance(
         val scalePercent: Int,
         val widthPercent: Int,
@@ -59,21 +58,15 @@ class OverlayService : Service() {
     private var root: LinearLayout? = null
     private var appliedAppearance: Appearance? = null
 
-    private lateinit var platformView: TextView
-    private lateinit var priceView: TextView
+    private lateinit var brandView: TextView
+    private lateinit var badgeView: TextView
     private lateinit var perKmView: TextView
-    private lateinit var perHourView: TextView
-    private lateinit var verdictView: TextView
-    private lateinit var reasonView: TextView
-    private lateinit var legsCard: LinearLayout
-    private lateinit var pickupRow: LinearLayout
-    private lateinit var tripRow: LinearLayout
-    private lateinit var totalRow: LinearLayout
-    private lateinit var thresholdCard: LinearLayout
-    private lateinit var thresholdMinView: TextView
-    private lateinit var thresholdNeedView: TextView
-    private lateinit var thresholdOfferView: TextView
-    private lateinit var netView: TextView
+    private lateinit var hourlyHintView: TextView
+    private lateinit var hourlyCellView: TextView
+    private lateinit var profitCellView: TextView
+    private lateinit var fuelCellView: TextView
+    private lateinit var earningsView: TextView
+    private lateinit var pickupView: TextView
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var collectJob: Job? = null
@@ -100,8 +93,6 @@ class OverlayService : Service() {
             return START_NOT_STICKY
         }
 
-        // Size, opacity and the buttons are baked into the view tree, so a
-        // change in Settings means building it again rather than patching it.
         if (root != null && appliedAppearance != currentAppearance()) {
             OverlayDiagnostics.log("aspect schimbat — reconstruiesc bannerul")
             detach()
@@ -136,177 +127,100 @@ class OverlayService : Service() {
         val scale = appearance.scalePercent.coerceIn(50, 200) / 100f
         val density = resources.displayMetrics.density
         fun dp(value: Int) = (value * density * scale).roundToInt()
-        // Margins are literal screen distance, so they must not follow the
-        // text scale — otherwise a bigger font also shoves the card off-edge.
         fun dpRaw(value: Int) = (value * density).roundToInt()
         fun sp(value: Float) = value * scale
 
         val alpha = appearance.opacityPercent.coerceIn(30, 100) * 255 / 100
-        val panelColor = Color.argb(alpha, 0x1A, 0x1B, 0x1F)
+        val panelColor = Color.argb(alpha, 0x12, 0x12, 0x14)
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(14))
+            setPadding(dp(16), dp(14), dp(16), dp(14))
             background = GradientDrawable().apply {
-                cornerRadius = dp(20).toFloat()
+                cornerRadius = dp(16).toFloat()
                 setColor(panelColor)
-                setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#40FFFFFF"))
+                setStroke(dp(2).coerceAtLeast(1), Color.parseColor(ORANGE))
             }
         }
 
-        // --- 1. header: which queue, and a way out ------------------------
+        // --- header: brand • platform | verdict badge | close ----------
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        platformView = TextView(this).apply {
-            setTextColor(Color.parseColor(TEXT_PRIMARY))
-            textSize = sp(19f)
+        brandView = TextView(this).apply {
+            setTextColor(Color.parseColor(TEXT_MUTED))
+            textSize = sp(12f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.08f
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        badgeView = TextView(this).apply {
+            textSize = sp(11f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            gravity = Gravity.CENTER
         }
         val closeView = TextView(this).apply {
             text = "✕"
             setTextColor(Color.WHITE)
-            textSize = sp(22f)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            // Generous padding: tapped one-handed, at a traffic light.
-            setPadding(dp(20), dp(2), dp(2), dp(10))
+            textSize = sp(18f)
+            setPadding(dp(14), dp(2), dp(2), dp(2))
             setOnClickListener { dismissBanner() }
         }
-        header.addView(platformView)
+        header.addView(brandView)
+        header.addView(badgeView)
         header.addView(closeView)
         card.addView(header)
 
-        // --- 2. the fare, as large as the card allows ---------------------
-        priceView = TextView(this).apply {
-            setTextColor(Color.parseColor(YELLOW))
-            textSize = sp(46f)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-        }
-        card.addView(priceView)
-
-        // --- 3. the two ratios, side by side ------------------------------
-        val ratios = LinearLayout(this).apply {
+        // --- hero: RON/km + ≈ RON/h ------------------------------------
+        val hero = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-                .apply { topMargin = dp(4) }
+                .apply { topMargin = dp(10) }
         }
         perKmView = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            textSize = sp(21f)
-            gravity = Gravity.START
+            setTextColor(Color.parseColor(ORANGE))
+            textSize = sp(34f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
-        perHourView = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            textSize = sp(21f)
-            gravity = Gravity.END
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        hourlyHintView = TextView(this).apply {
+            setTextColor(Color.parseColor(TEXT_PRIMARY))
+            textSize = sp(16f)
+            gravity = Gravity.END or Gravity.BOTTOM
+            setPadding(0, 0, 0, dp(4))
         }
-        ratios.addView(perKmView)
-        ratios.addView(perHourView)
-        card.addView(ratios)
+        hero.addView(perKmView)
+        hero.addView(hourlyHintView)
+        card.addView(hero)
 
-        card.addView(divider(::dp))
-
-        // --- 4. the verdict -----------------------------------------------
-        verdictView = TextView(this).apply {
-            textSize = sp(31f)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
+        // --- grid: oră | profit | combustibil --------------------------
+        val grid = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-        }
-        card.addView(verdictView)
-
-        // --- 5. why -------------------------------------------------------
-        // Was 12sp, the smallest text on a card read at speed. The reasons
-        // are the point of the verdict, so they now match the body size.
-        reasonView = TextView(this).apply {
-            textSize = sp(15f)
-            setLineSpacing(dp(3).toFloat(), 1f)
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-                .apply { topMargin = dp(8) }
-        }
-        card.addView(reasonView)
-
-        // --- 6. the legs --------------------------------------------------
-        legsCard = innerCard(::dp)
-        pickupRow = legRow(::dp, ::sp, "🚗", "PICKUP", BLUE)
-        tripRow = legRow(::dp, ::sp, "📍", "CURSĂ", GREEN)
-        totalRow = legRow(::dp, ::sp, "🏁", "TOTAL", PURPLE)
-        legsCard.addView(pickupRow)
-        legsCard.addView(rowDivider(::dp))
-        legsCard.addView(tripRow)
-        legsCard.addView(rowDivider(::dp))
-        legsCard.addView(totalRow)
-        card.addView(legsCard)
-
-        // --- 7. the driver's own bar, when rule 1 is on -------------------
-        thresholdCard = innerCard(::dp).apply {
-            (background as GradientDrawable).setStroke(
-                dp(1).coerceAtLeast(1),
-                Color.parseColor(YELLOW)
-            )
-        }
-        thresholdCard.addView(
-            TextView(this).apply {
-                text = "🎯  PRAGUL TĂU"
-                setTextColor(Color.parseColor(YELLOW))
-                textSize = sp(17f)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-                    .apply { bottomMargin = dp(8) }
+                .apply { topMargin = dp(12) }
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(Color.parseColor("#14FFFFFF"))
             }
-        )
-        thresholdMinView = thresholdRow(::dp, ::sp, thresholdCard, "Minim:")
-        thresholdNeedView = thresholdRow(::dp, ::sp, thresholdCard, "Necesar:")
-        thresholdOfferView = thresholdRow(::dp, ::sp, thresholdCard, "Oferta:")
-        card.addView(thresholdCard)
-
-        // --- 8. what is actually left -------------------------------------
-        val netCard = innerCard(::dp)
-        netCard.addView(
-            TextView(this).apply {
-                text = "💰  CÂȘTIG ESTIMAT NET"
-                setTextColor(Color.parseColor(YELLOW))
-                textSize = sp(17f)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-                    .apply { bottomMargin = dp(4) }
-            }
-        )
-        netView = TextView(this).apply {
-            setTextColor(Color.parseColor(YELLOW))
-            textSize = sp(28f)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            setPadding(dp(8), dp(10), dp(8), dp(10))
         }
-        netCard.addView(netView)
-        card.addView(netCard)
+        hourlyCellView = gridCell(::dp, ::sp, grid, weight = 1f)
+        profitCellView = gridCell(::dp, ::sp, grid, weight = 1.2f, accent = GREEN)
+        fuelCellView = gridCell(::dp, ::sp, grid, weight = 1f)
+        card.addView(grid)
 
-        // --- 9. logging the driver's own call -----------------------------
+        // --- detail lines ----------------------------------------------
+        earningsView = detailLine(::dp, ::sp, card)
+        pickupView = detailLine(::dp, ::sp, card)
+
         if (appearance.decisionButtons) {
-            card.addView(spacer(dp(12)))
+            card.addView(spacer(dp(10)))
             card.addView(decisionRow(::dp, ::sp))
         }
 
-        // --- 10. the drag handle ------------------------------------------
-        card.addView(
-            TextView(this).apply {
-                text = "⠿   Trage pentru a muta"
-                setTextColor(Color.parseColor(TEXT_MUTED))
-                textSize = sp(13f)
-                gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-                    .apply { topMargin = dp(10) }
-            }
-        )
-
-        // A tall rejection — three reasons plus every card — can outgrow a
-        // short screen. Scrolling inside keeps the buttons reachable instead
-        // of pushing them past the bottom edge.
         val scroller = ScrollView(this).apply {
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -315,7 +229,6 @@ class OverlayService : Service() {
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // Nothing to say until an offer arrives.
             visibility = View.GONE
             addView(scroller)
         }
@@ -334,16 +247,10 @@ class OverlayService : Service() {
         val screenWidth = metrics.widthPixels
         val screenHeight = metrics.heightPixels
 
-        // Width is a share of the screen, chosen directly by the driver, so
-        // it stays predictable when the text scale changes.
         val width = (screenWidth * appearance.widthPercent.coerceIn(50, 100) / 100)
             .coerceIn((screenWidth * 0.4).roundToInt(), screenWidth)
-        val maxHeight = screenHeight * appearance.maxHeightPercent.coerceIn(30, 100) / 100
-        scroller.layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-            // ScrollView honours a bounded height; WRAP_CONTENT would let a
-            // long card grow past the screen and take the buttons with it.
-        }
-        container.minimumWidth = 0
+        // Keep the card short so Uber/Bolt's bottom sheet stays free.
+        val maxHeight = screenHeight * appearance.maxHeightPercent.coerceIn(25, 60) / 100
 
         val layout = WindowManager.LayoutParams(
             width,
@@ -353,21 +260,16 @@ class OverlayService : Service() {
             android.graphics.PixelFormat.TRANSLUCENT
         ).apply {
             if (appearance.anchor.isPreset) {
-                // Let the window system hold it against the chosen edges, so
-                // it survives rotation and screen-size changes untouched.
                 gravity = gravityFor(appearance.anchor)
                 x = dpRaw(appearance.marginX)
                 y = dpRaw(appearance.marginY)
             } else {
                 gravity = Gravity.TOP or Gravity.START
-                // Where the driver last dragged it, or the default top spot.
                 x = if (settings.overlayX >= 0) settings.overlayX else dp(12)
                 y = if (settings.overlayY >= 0) settings.overlayY else dp(48)
             }
         }
 
-        // Bound the height after measurement rather than guessing at build
-        // time: the card's real height depends on how many reasons landed.
         card.viewTreeObserver.addOnGlobalLayoutListener {
             val lp = scroller.layoutParams
             val desired = if (card.height > maxHeight) maxHeight else WRAP
@@ -379,8 +281,6 @@ class OverlayService : Service() {
 
         container.setOnTouchListener(
             DragListener(wm, container, layout) { x, y ->
-                // A drag is an explicit override of the preset, so record it
-                // as one — otherwise the next rebuild would snap it back.
                 AppState.updateSettings(
                     AppState.settings.value.copy(
                         overlayX = x,
@@ -401,8 +301,6 @@ class OverlayService : Service() {
             wm.addView(container, layout)
             true
         } catch (t: Throwable) {
-            // Any failure here separates "RideGo never drew the banner" from
-            // "RideGo drew it and something hid it", so report it in full.
             Log.e(
                 LOG_TAG,
                 "RIDEGO_OVERLAY:\naddView=FAILED\n" +
@@ -436,9 +334,6 @@ class OverlayService : Service() {
 
         collectJob?.cancel()
         collectJob = scope.launch {
-            // Explicit draw requests rather than the analysis state: hiding
-            // after the timer must not imply the analysis is gone, and an
-            // analysis produced inside RideGo must not draw.
             AppState.overlayRequests.collectLatest { analysis ->
                 if (testMode) return@collectLatest
 
@@ -457,11 +352,39 @@ class OverlayService : Service() {
         }
     }
 
-    /**
-     * Logs what the driver chose. RideGo never presses anything inside Uber —
-     * it reads the screen, it does not drive it — so these record the
-     * decision rather than making it.
-     */
+    private fun gridCell(
+        dp: (Int) -> Int,
+        sp: (Float) -> Float,
+        parent: LinearLayout,
+        weight: Float,
+        accent: String = TEXT_PRIMARY
+    ): TextView {
+        val view = TextView(this).apply {
+            setTextColor(Color.parseColor(accent))
+            textSize = sp(13f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, weight)
+        }
+        parent.addView(view)
+        return view
+    }
+
+    private fun detailLine(
+        dp: (Int) -> Int,
+        sp: (Float) -> Float,
+        parent: LinearLayout
+    ): TextView {
+        val view = TextView(this).apply {
+            setTextColor(Color.parseColor(TEXT_PRIMARY))
+            textSize = sp(14f)
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+                .apply { topMargin = dp(8) }
+        }
+        parent.addView(view)
+        return view
+    }
+
     private fun decisionRow(dp: (Int) -> Int, sp: (Float) -> Float): View {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
@@ -469,19 +392,17 @@ class OverlayService : Service() {
             TextView(this).apply {
                 text = label
                 setTextColor(Color.WHITE)
-                textSize = sp(15f)
+                textSize = sp(13f)
                 gravity = Gravity.CENTER
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(dp(8), dp(12), dp(8), dp(12))
+                setPadding(dp(8), dp(11), dp(8), dp(11))
                 background = GradientDrawable().apply {
                     cornerRadius = dp(12).toFloat()
                     setColor(Color.parseColor(color))
                 }
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f
-                ).apply { marginEnd = dp(6) }
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                    marginEnd = dp(6)
+                }
                 setOnClickListener {
                     AppState.recordDriverDecision(decision)
                     dismissBanner()
@@ -492,8 +413,6 @@ class OverlayService : Service() {
         row.addView(button("✕  AM REFUZAT", RED, DriverDecision.REJECTED))
         return row
     }
-
-    // --- view builders --------------------------------------------------
 
     private fun gravityFor(anchor: OverlayAnchor): Int = when (anchor) {
         OverlayAnchor.TOP_LEFT -> Gravity.TOP or Gravity.START
@@ -508,240 +427,89 @@ class OverlayService : Service() {
         OverlayAnchor.CUSTOM -> Gravity.TOP or Gravity.START
     }
 
-    private fun divider(dp: (Int) -> Int): View = View(this).apply {
-        setBackgroundColor(Color.parseColor("#33FFFFFF"))
-        layoutParams = LinearLayout.LayoutParams(MATCH, dp(1).coerceAtLeast(1))
-            .apply {
-                topMargin = dp(12)
-                bottomMargin = dp(12)
-            }
-    }
-
-    private fun rowDivider(dp: (Int) -> Int): View = View(this).apply {
-        setBackgroundColor(Color.parseColor("#1FFFFFFF"))
-        layoutParams = LinearLayout.LayoutParams(MATCH, dp(1).coerceAtLeast(1))
-    }
-
-    /** The recessed panel the legs, threshold and net figures sit in. */
-    private fun innerCard(dp: (Int) -> Int): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(14), dp(12), dp(14), dp(12))
-        background = GradientDrawable().apply {
-            cornerRadius = dp(16).toFloat()
-            setColor(Color.parseColor("#14FFFFFF"))
-            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#26FFFFFF"))
-        }
-        layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-            .apply { topMargin = dp(12) }
-    }
-
-    /**
-     * One leg of the journey: icon, label, distance, time.
-     *
-     * The two figures are held in fixed-weight columns so PICKUP, CURSĂ and
-     * TOTAL line up as a table — the driver compares them vertically, and
-     * ragged columns defeat that at a glance.
-     */
-    private fun legRow(
-        dp: (Int) -> Int,
-        sp: (Float) -> Float,
-        icon: String,
-        label: String,
-        color: String
-    ): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(0, dp(9), 0, dp(9))
-
-        addView(
-            TextView(this@OverlayService).apply {
-                text = icon
-                textSize = sp(19f)
-            }
-        )
-        addView(
-            TextView(this@OverlayService).apply {
-                text = label
-                setTextColor(Color.parseColor(color))
-                textSize = sp(17f)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(dp(10), 0, 0, 0)
-                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
-            }
-        )
-        // tag lets render() find the two value slots without more fields.
-        addView(
-            TextView(this@OverlayService).apply {
-                tag = TAG_KM
-                setTextColor(Color.parseColor(TEXT_PRIMARY))
-                textSize = sp(18f)
-                gravity = Gravity.END
-                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1.1f)
-            }
-        )
-        addView(
-            TextView(this@OverlayService).apply {
-                tag = TAG_MIN
-                setTextColor(Color.parseColor(TEXT_PRIMARY))
-                textSize = sp(18f)
-                gravity = Gravity.END
-                layoutParams = LinearLayout.LayoutParams(0, WRAP, 0.9f)
-            }
-        )
-    }
-
-    /** A "label: value" line inside the threshold card. */
-    private fun thresholdRow(
-        dp: (Int) -> Int,
-        sp: (Float) -> Float,
-        parent: LinearLayout,
-        label: String
-    ): TextView {
-        val value = TextView(this).apply {
-            setTextColor(Color.parseColor(TEXT_PRIMARY))
-            textSize = sp(16f)
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1.7f)
-        }
-        parent.addView(
-            LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(4), 0, dp(4))
-                addView(
-                    TextView(this@OverlayService).apply {
-                        text = label
-                        setTextColor(Color.parseColor(TEXT_MUTED))
-                        textSize = sp(16f)
-                        layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
-                    }
-                )
-                addView(value)
-            }
-        )
-        return value
-    }
-
     // --- rendering ------------------------------------------------------
 
     private fun render(analysis: OfferAnalysis) {
-        // Pure rendering of the analysis produced by OfferCalculator — no
-        // number here is computed locally.
         val ro = Locale("ro", "RO")
         val offer = analysis.offer
-        val settings = AppState.settings.value
 
-        platformView.text = listOfNotNull(
-            offer.platform.label,
-            offer.serviceType
-        ).joinToString(" • ")
+        brandView.text = "${getString(R.string.brand_banner)}  •  ${offer.platform.label}"
 
-        priceView.text = offer.price?.let { String.format(ro, "%.2f RON", it) } ?: "—"
+        val (badgeText, badgeBg, badgeFg) = when (analysis.verdict) {
+            Verdict.ACCEPT -> Triple("●  CURSĂ BUNĂ", GREEN, Color.WHITE)
+            Verdict.CAUTION -> Triple("●  ATENȚIE", ORANGE, Color.BLACK)
+            Verdict.REJECT -> Triple("●  CURSĂ SLABĂ", RED, Color.WHITE)
+        }
+        badgeView.text = badgeText
+        badgeView.setTextColor(badgeFg)
+        badgeView.background = GradientDrawable().apply {
+            cornerRadius = 999f
+            setColor(Color.parseColor(badgeBg))
+        }
 
         perKmView.text = analysis.ronPerKm
             ?.let { String.format(ro, "%.2f RON/km", it) } ?: "— RON/km"
-        // Labelled as a shift hour, because that is what it now measures.
-        perHourView.text = analysis.ronPerHour
-            ?.let { String.format(ro, "%.0f RON/oră tură", it) } ?: "— RON/oră"
 
-        val verdictColor = when (analysis.verdict) {
-            Verdict.ACCEPT -> GREEN
-            Verdict.CAUTION -> ORANGE
-            Verdict.REJECT -> RED
-        }
-        verdictView.text = when (analysis.verdict) {
-            Verdict.ACCEPT -> "✓  ACCEPTĂ"
-            Verdict.CAUTION -> "⚠  ATENȚIE"
-            Verdict.REJECT -> "✕  RESPINGE"
-        }
-        verdictView.setTextColor(Color.parseColor(verdictColor))
+        val hourly = analysis.netRonPerHour ?: analysis.ronPerHour
+        hourlyHintView.text = hourly?.let { String.format(ro, "≈ %.0f RON/h", it) } ?: "≈ — RON/h"
 
-        // Each reason on its own line, always bulleted: a single reason and
-        // the first of three should read the same way.
-        reasonView.text = analysis.reasons.joinToString("\n") { "•  $it" }
-        reasonView.setTextColor(
-            Color.parseColor(if (analysis.verdict == Verdict.REJECT) RED else TEXT_MUTED)
-        )
-        reasonView.visibility = if (analysis.reasons.isEmpty()) View.GONE else View.VISIBLE
+        hourlyCellView.text = analysis.ronPerHour
+            ?.let { String.format(ro, "%.0f RON/oră", it) } ?: "— RON/oră"
 
-        // With the approach excluded it is not part of any total, so listing
-        // it would imply it was counted, and TOTAL would just repeat CURSĂ.
-        val includePickup = settings.includePickup
-        fillLeg(pickupRow, offer.pickupDistanceKm, offer.pickupTimeMinutes, ro)
-        fillLeg(tripRow, offer.tripDistanceKm, offer.tripTimeMinutes, ro)
-        fillLeg(totalRow, analysis.totalKm, analysis.totalMinutes, ro)
-        pickupRow.visibility = if (includePickup) View.VISIBLE else View.GONE
-        totalRow.visibility = if (includePickup) View.VISIBLE else View.GONE
-        // The separators belong to the rows they follow.
-        legsCard.getChildAt(1).visibility = if (includePickup) View.VISIBLE else View.GONE
-        legsCard.getChildAt(3).visibility = if (includePickup) View.VISIBLE else View.GONE
-
-        // The threshold card explains a rule the driver switched on, so it
-        // only appears while that rule is actually deciding anything.
-        val tripKm = offer.tripDistanceKm
-        if (settings.minCostPerKmEnabled && tripKm != null && tripKm > 0) {
-            val required = tripKm * settings.minCostPerKm
-            val actual = offer.price?.let { it / tripKm }
-            thresholdMinView.text = String.format(ro, "%.2f RON/km", settings.minCostPerKm)
-            thresholdNeedView.text = String.format(
-                ro,
-                "%.2f RON  (%.1f km × %.2f RON/km)",
-                required,
-                tripKm,
-                settings.minCostPerKm
+        profitCellView.text = analysis.estimatedProfit
+            ?.let { String.format(ro, "%+.2f PROFIT", it) } ?: "— PROFIT"
+        profitCellView.setTextColor(
+            Color.parseColor(
+                when {
+                    analysis.estimatedProfit == null -> TEXT_MUTED
+                    analysis.estimatedProfit >= 0 -> GREEN
+                    else -> RED
+                }
             )
-            val below = offer.price != null && offer.price < required
-            thresholdOfferView.text = buildString {
-                append(actual?.let { String.format(ro, "%.2f RON/km", it) } ?: "—")
-                append(if (below) "  →  sub minim" else "  →  peste minim")
-            }
-            thresholdOfferView.setTextColor(Color.parseColor(if (below) RED else GREEN))
-            thresholdCard.visibility = View.VISIBLE
-        } else {
-            thresholdCard.visibility = View.GONE
+        )
+
+        fuelCellView.text = analysis.fuelCost
+            ?.let { String.format(ro, "%.2f COST COMB.", it) } ?: "— COST COMB."
+
+        earningsView.text = offer.price
+            ?.let { String.format(ro, "Încasezi  %.2f RON", it) } ?: "Încasezi  —"
+
+        val pickupKm = offer.pickupDistanceKm
+        val pickupMin = offer.pickupTimeMinutes
+        pickupView.text = when {
+            pickupKm != null && pickupMin != null ->
+                String.format(ro, "Distanță la client  %.1f km  •  %d min", pickupKm, pickupMin)
+            pickupKm != null ->
+                String.format(ro, "Distanță la client  %.1f km", pickupKm)
+            pickupMin != null ->
+                "Distanță la client  $pickupMin min"
+            else -> "Distanță la client  —"
         }
-
-        // Net leads because it is what the verdict runs on and what the
-        // driver actually keeps.
-        netView.text = analysis.netRonPerHour
-            ?.let { String.format(ro, "%.0f RON/oră NET", it) }
-            ?: "date incomplete"
+        pickupView.visibility = View.VISIBLE
     }
 
-    private fun fillLeg(row: LinearLayout, km: Double?, minutes: Int?, ro: Locale) {
-        row.findViewWithTag<TextView>(TAG_KM).text =
-            km?.let { String.format(ro, "%.1f km", it) } ?: "—"
-        row.findViewWithTag<TextView>(TAG_MIN).text =
-            minutes?.let { "$it min" } ?: "—"
-    }
-
-    /**
-     * Paints a fixed banner through the same window live offers use, so a
-     * success narrows the problem down to the OCR path and a failure narrows
-     * it down to the window itself. Doubles as a size preview.
-     */
     private fun startTestBanner() {
         val container = root ?: return
         testJob?.cancel()
         testMode = true
         testJob = scope.launch {
-            val ro = Locale("ro", "RO")
-            platformView.text = "RIDEGO TEST • UberX"
-            priceView.text = "28,79 RON"
-            perKmView.text = "2,15 RON/km"
-            perHourView.text = "54 RON/oră"
-            verdictView.text = "✓  EXEMPLU"
-            verdictView.setTextColor(Color.parseColor(GREEN))
-            reasonView.text = "•  așa va arăta bannerul la mărimea și poziția alese"
-            reasonView.setTextColor(Color.parseColor(TEXT_MUTED))
-            reasonView.visibility = View.VISIBLE
-            fillLeg(pickupRow, 4.9, 9, ro)
-            fillLeg(tripRow, 8.5, 23, ro)
-            fillLeg(totalRow, 13.4, 32, ro)
-            pickupRow.visibility = View.VISIBLE
-            totalRow.visibility = View.VISIBLE
-            legsCard.getChildAt(1).visibility = View.VISIBLE
-            legsCard.getChildAt(3).visibility = View.VISIBLE
-            thresholdCard.visibility = View.GONE
-            netView.text = "37 RON/oră NET"
+            brandView.text = "${getString(R.string.brand_banner)}  •  UBER"
+            badgeView.text = "●  CURSĂ BUNĂ"
+            badgeView.setTextColor(Color.WHITE)
+            badgeView.background = GradientDrawable().apply {
+                cornerRadius = 999f
+                setColor(Color.parseColor(GREEN))
+            }
+            perKmView.text = "3,37 RON/km"
+            hourlyHintView.text = "≈ 90 RON/h"
+            hourlyCellView.text = "97 RON/oră"
+            profitCellView.text = "+35,70 PROFIT"
+            profitCellView.setTextColor(Color.parseColor(GREEN))
+            fuelCellView.text = "7,80 COST COMB."
+            earningsView.text = "Încasezi  43,50 RON"
+            pickupView.text = "Distanță la client  1,8 km  •  4 min"
+            pickupView.visibility = View.VISIBLE
+
             container.visibility = View.VISIBLE
             AppState.setOverlayVisible(true)
 
@@ -761,13 +529,9 @@ class OverlayService : Service() {
     // --- helpers --------------------------------------------------------
 
     private fun spacer(heightPx: Int): View = View(this).apply {
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            heightPx
-        )
+        layoutParams = LinearLayout.LayoutParams(MATCH, heightPx)
     }
 
-    /** Close button: hides the banner now and cancels the countdown. */
     private fun dismissBanner() {
         testJob?.cancel()
         testMode = false
@@ -827,9 +591,6 @@ class OverlayService : Service() {
 
         override fun onTouch(v: View, event: MotionEvent): Boolean = when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                // An anchored window measures x/y from whichever edges its
-                // gravity names, so dragging one straight from a preset would
-                // send it the wrong way. Convert to absolute top-left first.
                 if (params.gravity != (Gravity.TOP or Gravity.START)) {
                     val location = IntArray(2)
                     view.getLocationOnScreen(location)
@@ -853,7 +614,6 @@ class OverlayService : Service() {
                 true
             }
             MotionEvent.ACTION_UP -> {
-                // Remember where it was put, so it comes back there tomorrow.
                 if (dragged) onMoved(params.x, params.y)
                 true
             }
@@ -865,20 +625,14 @@ class OverlayService : Service() {
         private const val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
         private const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
 
-        private const val TAG_KM = "km"
-        private const val TAG_MIN = "min"
-
-        private const val YELLOW = "#FFC400"
-        private const val GREEN = "#4CAF50"
         private const val ORANGE = "#FF9800"
+        private const val GREEN = "#4CAF50"
         private const val RED = "#F44336"
-        private const val BLUE = "#42A5F5"
-        private const val PURPLE = "#AB47BC"
         private const val TEXT_PRIMARY = "#E4E6E9"
         private const val TEXT_MUTED = "#9BA0A6"
 
-        const val ACTION_HIDE = "com.ridego.app.OVERLAY_HIDE"
-        const val ACTION_TEST = "com.ridego.app.OVERLAY_TEST"
+        const val ACTION_HIDE = "com.tripworth.app.OVERLAY_HIDE"
+        const val ACTION_TEST = "com.tripworth.app.OVERLAY_TEST"
 
         private const val LOG_TAG = "RIDEGO_OVERLAY"
 
@@ -890,11 +644,6 @@ class OverlayService : Service() {
             else -> "GONE"
         }
 
-        /**
-         * Entry point for live capture. Applies the same gate as before, but
-         * reports every branch — the silent early returns on this path are
-         * what made an unset toggle look like a broken app.
-         */
         fun showIfEnabled(context: Context) {
             val internalSetting = AppState.settings.value.overlayEnabled
             val androidPermission = canDrawOverlays(context)
@@ -936,7 +685,6 @@ class OverlayService : Service() {
             }
         }
 
-        /** Drives the real service, WindowManager and window type. */
         fun test(context: Context) {
             val androidPermission = canDrawOverlays(context)
             OverlayDiagnostics.update { it.copy(androidPermission = androidPermission) }

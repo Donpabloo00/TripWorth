@@ -53,7 +53,7 @@ class ScreenCapturer(
         val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         imageReader = reader
         virtualDisplay = projection.createVirtualDisplay(
-            "RideGoCapture",
+            "TripWorthCapture",
             width,
             height,
             metrics.densityDpi,

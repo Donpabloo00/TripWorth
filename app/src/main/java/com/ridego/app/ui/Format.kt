@@ -14,5 +14,7 @@ fun Double?.km(): String = if (this == null) "—" else String.format(RO, "%.1f 
 
 fun Int?.min(): String = if (this == null) "—" else "$this min"
 
+fun Double?.kmh(): String = if (this == null) "—" else String.format(RO, "%.0f km/h", this)
+
 fun formatTime(timestamp: Long): String =
     SimpleDateFormat("dd MMM, HH:mm", RO).format(Date(timestamp))

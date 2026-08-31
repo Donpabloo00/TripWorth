@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TripWorth</string>
+    <string name="brand_banner">TRIPWORTH</string>
+    <string name="slogan">Merită cursa?</string>
+    <string name="privacy_note">Datele capturate sunt procesate local pe dispozitiv.</string>
+    <string name="capture_channel_name">Citire ecran</string>
+
+    <string name="setup_intro">Finalizează pașii ca %1$s să citească ofertele Uber și Bolt.</string>
+    <string name="setup_auto_start_detail">Citește ofertele și arată cardul de analiză fără să deschizi %1$s.</string>
+    <string name="battery_exempt_ok">%1$s e exceptat. Citirea nu va fi oprită de sistem în timpul turei.</string>
+    <string name="storage_title">Spațiu ocupat de %1$s</string>
+    <string name="overlay_test_hint">Apasă, apoi ieși imediat din %1$s (Home sau Uber). Bannerul de test trebuie să apară sus timp de 15 secunde.</string>
+
+    <string name="play_store_title">TripWorth - Verdict Cursă</string>
+    <string name="play_store_short_description">Acceptă sau refuză curse în secunde. RON/km, profit net, procesare locală.</string>
+</resources>

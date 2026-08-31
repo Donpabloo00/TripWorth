@@ -1,0 +1,15 @@
+Are you a ride-share driver wondering if a trip is worth taking?
+
+TripWorth reads the offer on your screen and shows an instant verdict:
+
+• Accept / Caution / Skip — clear decision in seconds
+• RON/km and RON/hour — including net profit after fuel
+• Pickup distance, estimated duration, customizable thresholds
+• Overlay on top of other apps — see the verdict without switching screens
+• Shift history and statistics
+
+100% local on your phone. No account. No data sent to servers.
+
+You set the rules — TripWorth only calculates.
+
+Compatible with your driver apps. Works offline after setup.

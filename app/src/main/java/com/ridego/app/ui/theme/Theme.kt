@@ -44,11 +44,11 @@ private val RideTypography = Typography(
 )
 
 @Composable
-fun RideGoTheme(
+fun TripWorthTheme(
     @Suppress("UNUSED_PARAMETER") darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    // RideGo is dark-only by design — drivers use it at night, over other apps.
+    // TripWorth is dark-only by design — drivers use it at night, over other apps.
     MaterialTheme(
         colorScheme = RideColorScheme,
         typography = RideTypography,

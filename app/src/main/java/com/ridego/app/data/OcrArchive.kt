@@ -21,7 +21,7 @@ object OcrArchive {
 
     private const val FILE_NAME = "ocr-archive.txt"
     private const val MAX_ENTRIES = 20
-    private const val LOG_TAG = "RIDEGO_OCR"
+    private const val LOG_TAG = "VERDICT_OCR"
 
     private var file: File? = null
 

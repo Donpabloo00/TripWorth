@@ -98,10 +98,10 @@ data class RideSettings(
 
     /**
      * Vertical room the banner may take, as a percentage of screen height.
-     * Anything taller scrolls inside, so a long list of rejection reasons can
-     * never push the buttons off the bottom of the screen.
+     * Kept short on purpose: the card sits at the top so Uber/Bolt's own
+     * offer sheet at the bottom stays free to read and tap.
      */
-    val overlayMaxHeightPercent: Int = 80,
+    val overlayMaxHeightPercent: Int = 45,
 
     /** Corner or edge the banner snaps to. */
     val overlayAnchor: OverlayAnchor = OverlayAnchor.TOP_CENTER,

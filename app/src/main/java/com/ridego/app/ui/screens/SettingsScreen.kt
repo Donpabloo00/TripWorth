@@ -23,57 +23,47 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.ridego.app.calculator.OfferCalculator
-import com.ridego.app.calculator.OverlayAnchor
+import com.ridego.app.calculator.RideSettings
 import com.ridego.app.calculator.RuleProfile
 import com.ridego.app.data.HistoryEntry
 import com.ridego.app.data.ShiftStats
-import com.ridego.app.calculator.RideSettings
 import com.ridego.app.overlay.OverlayService
 import com.ridego.app.parser.PlatformMode
 import com.ridego.app.ui.PrimaryButton
 import com.ridego.app.ui.RideCard
 import com.ridego.app.ui.SectionLabel
 import com.ridego.app.ui.theme.RideGray
-import com.ridego.app.ui.theme.RideGreen
 import com.ridego.app.ui.theme.RideWhite
 import com.ridego.app.ui.theme.RideYellow
 import java.util.Locale
 import kotlin.math.roundToInt
-
-/** Average city speed used to translate an hourly target into a fare. */
-private const val CITY_SPEED_KMH = 25.0
 
 private val RO = Locale("ro", "RO")
 
 private fun money(value: Double, decimals: Int = 2) =
     String.format(RO, "%,.${decimals}f", value)
 
-/** Snaps a measured pace onto the half-ride steps the setting moves in. */
-private fun round(value: Double): Double =
+private fun roundPace(value: Double): Double =
     (Math.round(value * 2) / 2.0).coerceIn(1.0, 6.0)
 
 /**
- * Rebuilt around the one question a driver actually asks: how much do I want
- * to make per hour. Everything else is either an input to that number or an
- * explanation of it.
- *
- * No free-text number fields: they invited typos mid-shift and surfaced float
- * noise like "9.699999809265137". Values move in fixed steps instead.
+ * Driver-first settings: goal, profile, pace, fuel, popup, behaviour.
+ * Advanced knobs stay collapsed so mid-shift changes stay one-handed.
  */
 @Composable
 fun SettingsScreen(
     settings: RideSettings,
-    /** The driver's own record, so the pace can be measured, not just assumed. */
     history: List<HistoryEntry>,
     onChange: (RideSettings) -> Unit,
     onOpenOverlayDebug: () -> Unit,
@@ -81,17 +71,10 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val costPerKm = settings.consumptionLPer100Km / 100.0 * settings.fuelPricePerLiter +
-        settings.extraCostPerKm
-    val fuelPerHour = CITY_SPEED_KMH * costPerKm
-    // The bar a single ride has to clear.
-    val effectiveTarget = OfferCalculator.effectiveTarget(settings)
-    // Minutes of the shift one ride consumes at the declared pace, and what it
-    // therefore has to leave behind to reach the goal.
-    val slotForPace = 60.0 / settings.ridesPerHour.coerceIn(0.5, 10.0)
-    val perRideNeeded = settings.minimumRonPerHour / settings.ridesPerHour.coerceIn(0.5, 10.0)
     val shift = remember(history) { ShiftStats.summarise(history) }
-    val grossNeeded = effectiveTarget + fuelPerHour
+    var showAdvanced by remember { mutableStateOf(false) }
+    val costPerKm =
+        settings.consumptionLPer100Km / 100.0 * settings.fuelPricePerLiter + settings.extraCostPerKm
 
     Column(
         modifier = Modifier
@@ -101,25 +84,20 @@ fun SettingsScreen(
     ) {
         Text("SETĂRI", style = MaterialTheme.typography.headlineMedium, color = RideYellow)
 
-        // --- the goal ---------------------------------------------------
+        Spacer(Modifier.height(16.dp))
+        PrimaryButton(text = "CONFIGURARE (PERMISIUNI)", onClick = onOpenOptimization)
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(
+            onClick = { OverlayService.test(context) },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("VEZI CUM ARATĂ POPUP-UL") }
+
+        // --- obiectiv ---------------------------------------------------
         Spacer(Modifier.height(20.dp))
-        SectionLabel("Obiectivul tău")
+        SectionLabel("Cât vrei pe oră")
         Spacer(Modifier.height(10.dp))
         RideCard {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "Cât vrei să îți rămână pe oră",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = RideWhite
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "după carburant, în buzunar",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = RideGray
-                )
-
-                Spacer(Modifier.height(14.dp))
                 Stepper(
                     value = settings.minimumRonPerHour,
                     step = 5.0,
@@ -127,16 +105,14 @@ fun SettingsScreen(
                     format = { "${money(it, 0)} RON/oră" },
                     onValue = { onChange(settings.copy(minimumRonPerHour = it)) }
                 )
-
-                Spacer(Modifier.height(14.dp))
-                // Horizontal scroll of the values a driver realistically picks.
+                Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf(40, 50, 60, 70, 80, 90, 100, 120, 150).forEach { preset ->
+                    listOf(40, 50, 60, 70, 80, 100).forEach { preset ->
                         FilterChip(
                             selected = settings.minimumRonPerHour.roundToInt() == preset,
                             onClick = {
@@ -153,184 +129,12 @@ fun SettingsScreen(
             }
         }
 
-        // --- what it means ----------------------------------------------
+        // --- profil -----------------------------------------------------
         Spacer(Modifier.height(14.dp))
-        SectionLabel("Ce înseamnă asta")
+        SectionLabel("Profil rapid")
         Spacer(Modifier.height(10.dp))
         RideCard {
             Column {
-                Advice(
-                    "La ${money(CITY_SPEED_KMH, 0)} km/h prin oraș, carburantul te costă " +
-                        "${money(fuelPerHour)} RON în fiecare oră."
-                )
-                Spacer(Modifier.height(10.dp))
-                Advice(
-                    "Ca să îți rămână ${money(settings.minimumRonPerHour, 0)} RON pe oră de tură, " +
-                        "o cursă trebuie să plătească circa ${money(grossNeeded, 0)} RON/oră brut."
-                )
-                Spacer(Modifier.height(10.dp))
-                Advice(
-                    "La ${money(settings.ridesPerHour, 1)} curse pe oră, asta înseamnă o ofertă " +
-                        "de la ${money(grossNeeded / settings.ridesPerHour.coerceAtLeast(0.5))} " +
-                        "RON în sus.",
-                    highlight = true
-                )
-                Spacer(Modifier.height(10.dp))
-                Advice(
-                    "Cifra pe oră ține cont de ritmul tău, nu presupune că înlănțui curse " +
-                        "fără pauză. De aceea e mai mică decât în alte aplicații — și de " +
-                        "aceea seamănă cu ce vezi la finalul turei."
-                )
-            }
-        }
-
-        // --- occupancy ------------------------------------------------------
-        Spacer(Modifier.height(14.dp))
-        SectionLabel("Ritmul tău")
-        Spacer(Modifier.height(10.dp))
-        RideCard {
-            Column {
-                Text(
-                    "Câte curse faci într-o oră obișnuită",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = RideWhite
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "inclusiv timpul în care aștepți comenzi",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = RideGray
-                )
-                Spacer(Modifier.height(12.dp))
-                LabelledStepper(
-                    label = "Ritm",
-                    value = settings.ridesPerHour,
-                    step = 0.5,
-                    range = 1.0..6.0,
-                    format = { "${money(it, 1)} curse/oră" },
-                    onValue = { onChange(settings.copy(ridesPerHour = it)) }
-                )
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(1.5, 2.0, 2.5, 3.0, 4.0).forEach { preset ->
-                        FilterChip(
-                            selected = Math.abs(settings.ridesPerHour - preset) < 0.01,
-                            onClick = { onChange(settings.copy(ridesPerHour = preset)) },
-                            label = { Text(money(preset, 1)) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = RideYellow,
-                                selectedLabelColor = Color.Black
-                            )
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-                Advice(
-                    "La ${money(settings.ridesPerHour, 1)} curse pe oră, fiecare cursă îți " +
-                        "ocupă în medie ${money(slotForPace, 0)} minute din tură — timpul de " +
-                        "condus plus așteptarea de după."
-                )
-                Spacer(Modifier.height(8.dp))
-                Advice(
-                    "Ca să scoți ${money(settings.minimumRonPerHour, 0)} RON/oră, o cursă " +
-                        "trebuie să îți lase ${money(perRideNeeded, 0)} RON net în buzunar, " +
-                        "după carburant.",
-                    highlight = true
-                )
-                Spacer(Modifier.height(8.dp))
-                Advice(
-                    "Asta e cifra care contează. Fără ea, o cursă de 7 minute pare că " +
-                        "plătește 120 RON/oră — adevărat doar dacă ai face 8 la rând, " +
-                        "fără nicio pauză."
-                )
-
-                // The whole model rests on the number above, and it is a guess
-                // until the driver's own record is put next to it.
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider(color = RideGray.copy(alpha = 0.2f))
-                Spacer(Modifier.height(14.dp))
-                val measured = shift.measuredRidesPerHour
-                if (measured == null) {
-                    Text(
-                        "RITMUL TĂU REAL",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = RideGray
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Advice(
-                        "Încă nu îl pot măsura — am nevoie de cel puțin " +
-                            "${ShiftStats.MIN_SAMPLE} curse marcate ca acceptate " +
-                            "(${shift.acceptedCount} până acum). Folosește butoanele " +
-                            "de pe banner după fiecare ofertă și îți spun ritmul tău " +
-                            "adevărat, în loc să îl ghicești."
-                    )
-                } else {
-                    Text(
-                        "RITMUL TĂU REAL",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = RideYellow
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Advice(
-                        "Din ${shift.acceptedCount} curse acceptate în " +
-                            "${money(shift.activeHours, 1)} ore de tură: " +
-                            "${money(measured, 1)} curse/oră.",
-                        highlight = true
-                    )
-                    shift.averageNetRonPerHour?.let { net ->
-                        Spacer(Modifier.height(6.dp))
-                        Advice(
-                            "Cursele acceptate ți-au lăsat în medie " +
-                                "${money(net, 0)} RON/oră net, față de obiectivul de " +
-                                "${money(settings.minimumRonPerHour, 0)}."
-                        )
-                    }
-                    if (Math.abs(measured - settings.ridesPerHour) >= 0.25) {
-                        Spacer(Modifier.height(10.dp))
-                        OutlinedButton(
-                            onClick = { onChange(settings.copy(ridesPerHour = round(measured))) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("FOLOSEȘTE ${money(round(measured), 1)} CURSE/ORĂ") }
-                    }
-                }
-                shift.topRejectionReason?.let { rule ->
-                    Spacer(Modifier.height(10.dp))
-                    Advice(
-                        "Regula care respinge cel mai des: $rule " +
-                            "(${shift.rejectedCount} oferte respinse în total)."
-                    )
-                }
-            }
-        }
-
-        // --- acceptance criteria --------------------------------------------
-        Spacer(Modifier.height(14.dp))
-        SectionLabel("Criterii de acceptare")
-        Spacer(Modifier.height(10.dp))
-        RideCard {
-            Column {
-                Text(
-                    "Patru reguli dure. Bifată = se aplică; nebifată = ignorată complet. " +
-                        "O ofertă care încalcă mai multe le vede pe toate în motiv.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = RideGray
-                )
-
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    "PORNIRE RAPIDĂ",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = RideYellow
-                )
-                Spacer(Modifier.height(8.dp))
-                // Six of them: a scrolling row rather than a wrapped grid, so
-                // the ladder from cheapest to strictest stays in one direction.
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -359,154 +163,48 @@ fun SettingsScreen(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Advice(
+                Text(
                     RuleProfile.entries.firstOrNull { it.matches(settings) }?.summary
-                        ?: "Valori proprii. Apasă un profil ca să pornești de la o bază " +
-                            "cunoscută, apoi ajustează — profilul setează și obiectivul " +
-                            "pe oră, nu doar cele patru criterii.",
-                    highlight = RuleProfile.entries.any { it.matches(settings) }
+                        ?: "Alege un profil, sau ajustează manual mai jos.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = RideGray
                 )
-
-                Spacer(Modifier.height(18.dp))
-                Criterion(
-                    label = "Preț minim total",
-                    enabled = settings.minimumFareEnabled,
-                    onEnabled = { onChange(settings.copy(minimumFareEnabled = it)) },
-                    value = settings.minimumFare,
-                    step = 1.0,
-                    range = 1.0..300.0,
-                    format = { "${money(it, 0)} RON" },
-                    presets = listOf(15.0, 20.0, 25.0, 30.0),
-                    presetFormat = { money(it, 0) },
-                    what = "Respinge orice cursă care plătește mai puțin decât atât, " +
-                        "indiferent cât de bine arată raportul pe kilometru sau pe oră.",
-                    why = "Fiecare cursă are un cost fix pe care matematica pe oră nu îl " +
-                        "vede: aștepți clientul, urcă, discutați, cauți adresa. O cursă " +
-                        "de 12 lei poate ieși 150 RON/oră pe hârtie și tot să îți strice " +
-                        "tura, pentru că ocupă un slot întreg.",
-                    recommendation = "Recomandat: 20-30 RON. Sub 15 rar merită slotul; " +
-                        "peste 35 începi să refuzi curse scurte și bine plătite.",
-                    onValue = { onChange(settings.copy(minimumFare = it)) }
-                )
-
-                Criterion(
-                    label = "Cost minim / km",
-                    enabled = settings.minCostPerKmEnabled,
-                    onEnabled = { onChange(settings.copy(minCostPerKmEnabled = it)) },
-                    value = settings.minCostPerKm,
-                    step = 0.10,
-                    range = 0.10..20.0,
-                    format = { "${money(it)} RON/km" },
-                    presets = listOf(1.80, 2.00, 2.50, 3.00),
-                    presetFormat = { money(it) },
-                    what = "Folosește DOAR distanța cu clientul în mașină. Prețul minim " +
-                        "cerut se recalculează pentru fiecare ofertă: " +
-                        "km cu clientul × valoarea de aici.",
-                    why = "O cursă lungă prost plătită arată acceptabil ca sumă totală. " +
-                        "Regula asta o prinde: la ${money(settings.minCostPerKm)} RON/km, " +
-                        "o cursă de 20 km trebuie să plătească minim " +
-                        "${money(20 * settings.minCostPerKm, 0)} RON.",
-                    recommendation = "Recomandat: 2,00-2,50 RON/km. Tarifele reale UberX " +
-                        "din București sunt 2-4 RON/km pe distanța cu clientul, deci " +
-                        "peste 3,00 respingi majoritatea ofertelor.",
-                    onValue = { onChange(settings.copy(minCostPerKm = it)) }
-                )
-
-                Criterion(
-                    label = "Distanța maximă până la preluare",
-                    enabled = settings.maxPickupKmEnabled,
-                    onEnabled = { onChange(settings.copy(maxPickupKmEnabled = it)) },
-                    value = settings.maxPickupKm,
-                    step = 0.5,
-                    range = 0.5..60.0,
-                    format = { "${money(it, 1)} km" },
-                    presets = listOf(2.0, 3.0, 5.0, 8.0),
-                    presetFormat = { money(it, 0) },
-                    what = "Respinge oferta dacă drumul până la client depășește " +
-                        "distanța setată. Se uită doar la preluare, nu la cursă.",
-                    why = "Drumul până la client e singurul pe care nu ți-l plătește " +
-                        "nimeni: consumi benzină și minute pe gratis. La 8 km până la " +
-                        "client ai făcut deja o cursă întreagă înainte să începi.",
-                    recommendation = "Recomandat: 3-5 km. Sub 2 km ratezi oferte bune în " +
-                        "orele libere; peste 8 km lucrezi degeaba pe distanța de apropiere.",
-                    onValue = { onChange(settings.copy(maxPickupKm = it)) }
-                )
-
-                Criterion(
-                    label = "Cursa maximă acceptată",
-                    enabled = settings.maxTripKmEnabled,
-                    onEnabled = { onChange(settings.copy(maxTripKmEnabled = it)) },
-                    value = settings.maxTripKm,
-                    step = 1.0,
-                    range = 1.0..300.0,
-                    format = { "${money(it, 1)} km" },
-                    presets = listOf(15.0, 25.0, 30.0, 50.0),
-                    presetFormat = { money(it, 0) },
-                    what = "Respinge cursele mai lungi decât atât, măsurat pe distanța " +
-                        "cu clientul în mașină.",
-                    why = "O cursă foarte lungă te scoate din zona în care primești " +
-                        "comenzi și te poate lăsa să te întorci gol zeci de kilometri. " +
-                        "Plătește bine pe moment și îți poate goli restul turei.",
-                    recommendation = "Recomandat: 25-30 km. Ridică spre 50 dacă lucrezi " +
-                        "și aeroport; coboară spre 15 dacă vrei să rămâi strict în oraș.",
-                    onValue = { onChange(settings.copy(maxTripKm = it)) }
-                )
-
-                Spacer(Modifier.height(8.dp))
-                val activeCount = listOf(
-                    settings.minimumFareEnabled,
-                    settings.minCostPerKmEnabled,
-                    settings.maxPickupKmEnabled,
-                    settings.maxTripKmEnabled
-                ).count { it }
-                if (activeCount == 0) {
-                    Advice(
-                        "Niciun criteriu activ — verdictul rămâne doar pe pragul orar."
-                    )
-                } else {
-                    Advice(
-                        "$activeCount din 4 criterii active.",
-                        highlight = true
-                    )
-                }
             }
         }
 
-        // --- what counts --------------------------------------------------
+        // --- ritm -------------------------------------------------------
         Spacer(Modifier.height(14.dp))
-        SectionLabel("Ce intră în calcul")
+        SectionLabel("Ritmul tău")
         Spacer(Modifier.height(10.dp))
         RideCard {
             Column {
-                ToggleRow("Numără și drumul până la client", settings.includePickup) {
-                    onChange(settings.copy(includePickup = it))
-                }
-                Spacer(Modifier.height(6.dp))
-                if (settings.includePickup) {
-                    Advice(
-                        "PORNIT: se socotesc și kilometrii și minutele până la client. " +
-                            "Ăsta e adevărul despre ora ta — drumul până acolo consumă " +
-                            "benzină și timp, chiar dacă nu ți-l plătește nimeni."
-                    )
-                } else {
-                    Advice(
-                        "OPRIT: se socotește doar cursa plătită. Cifrele ies mai mari, " +
-                            "dar nu mai reflectă ora reală — un pickup de 20 de minute " +
-                            "dispare din calcul, deși l-ai condus.",
-                        highlight = true
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Advice(
-                        "Util ca să compari tarife între ele. Nu îl folosi ca să decizi " +
-                            "dacă tura merită."
-                    )
+                LabelledStepper(
+                    label = "Curse/oră",
+                    value = settings.ridesPerHour,
+                    step = 0.5,
+                    range = 1.0..6.0,
+                    format = { money(it, 1) },
+                    onValue = { onChange(settings.copy(ridesPerHour = it)) }
+                )
+                shift.measuredRidesPerHour?.let { measured ->
+                    if (Math.abs(measured - settings.ridesPerHour) >= 0.25) {
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = {
+                                onChange(settings.copy(ridesPerHour = roundPace(measured)))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("FOLOSEȘTE RITMUL REAL (${money(roundPace(measured), 1)})")
+                        }
+                    }
                 }
             }
         }
 
-        // --- the car ------------------------------------------------------
+        // --- mașină -----------------------------------------------------
         Spacer(Modifier.height(14.dp))
-        SectionLabel("Mașina ta")
+        SectionLabel("Mașina")
         Spacer(Modifier.height(10.dp))
         RideCard {
             Column {
@@ -515,301 +213,193 @@ fun SettingsScreen(
                     value = settings.consumptionLPer100Km,
                     step = 0.5,
                     range = 2.0..25.0,
-                    format = { "${money(it, 1)} L/100km" },
+                    format = { "${money(it, 1)} L" },
                     onValue = { onChange(settings.copy(consumptionLPer100Km = it)) }
                 )
                 Spacer(Modifier.height(12.dp))
                 LabelledStepper(
-                    label = "Carburant",
+                    label = "Benzină",
                     value = settings.fuelPricePerLiter,
                     step = 0.10,
                     range = 3.0..20.0,
-                    format = { "${money(it)} RON/L" },
+                    format = { "${money(it)} RON" },
                     onValue = { onChange(settings.copy(fuelPricePerLiter = it)) }
                 )
-                Spacer(Modifier.height(12.dp))
-                LabelledStepper(
-                    label = "Cost extra",
-                    value = settings.extraCostPerKm,
-                    step = 0.05,
-                    range = 0.0..5.0,
-                    format = { "${money(it)} RON/km" },
-                    onValue = { onChange(settings.copy(extraCostPerKm = it)) }
-                )
-
-                Spacer(Modifier.height(14.dp))
-                Advice(
-                    "Te costă ${money(costPerKm)} RON fiecare kilometru — " +
-                        "${money(costPerKm * 10)} RON la fiecare 10 km.",
-                    highlight = true
-                )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    "„Cost extra\" e pentru uzură, anvelope, service — dacă vrei să le pui la " +
-                        "socoteală, nu doar benzina.",
+                    "Cost: ${money(costPerKm)} RON/km",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = RideGray
+                    color = RideYellow
                 )
             }
         }
 
-        // --- platform -----------------------------------------------------
+        // --- popup ------------------------------------------------------
         Spacer(Modifier.height(14.dp))
-        SectionLabel("Platformă")
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PlatformMode.entries.forEach { mode ->
-                FilterChip(
-                    selected = settings.platformMode == mode,
-                    onClick = { onChange(settings.copy(platformMode = mode)) },
-                    label = { Text(mode.label) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = RideYellow,
-                        selectedLabelColor = Color.Black
-                    )
-                )
-            }
-        }
-
-        // --- popup ----------------------------------------------------------
-        Spacer(Modifier.height(14.dp))
-        SectionLabel("Popup peste Uber/Bolt")
+        SectionLabel("Popup pe Uber")
         Spacer(Modifier.height(10.dp))
         RideCard {
             Column {
+                ToggleRow("Arată popup", settings.overlayEnabled) {
+                    onChange(settings.copy(overlayEnabled = it))
+                }
                 LabelledStepper(
                     label = "Text",
                     value = settings.overlayScalePercent.toDouble(),
                     step = 10.0,
-                    range = 50.0..200.0,
+                    range = 70.0..160.0,
                     format = { "${money(it, 0)} %" },
                     onValue = { onChange(settings.copy(overlayScalePercent = it.roundToInt())) }
-                )
-                Spacer(Modifier.height(12.dp))
-                LabelledStepper(
-                    label = "Lățime",
-                    value = settings.overlayWidthPercent.toDouble(),
-                    step = 4.0,
-                    range = 50.0..100.0,
-                    format = { "${money(it, 0)} %" },
-                    onValue = { onChange(settings.copy(overlayWidthPercent = it.roundToInt())) }
-                )
-                Spacer(Modifier.height(12.dp))
-                LabelledStepper(
-                    label = "Înălțime max",
-                    value = settings.overlayMaxHeightPercent.toDouble(),
-                    step = 5.0,
-                    range = 30.0..100.0,
-                    format = { "${money(it, 0)} %" },
-                    onValue = {
-                        onChange(settings.copy(overlayMaxHeightPercent = it.roundToInt()))
-                    }
-                )
-                Spacer(Modifier.height(12.dp))
-                LabelledStepper(
-                    label = "Opacitate",
-                    value = settings.overlayOpacityPercent.toDouble(),
-                    step = 5.0,
-                    range = 30.0..100.0,
-                    format = { "${money(it, 0)} %" },
-                    onValue = { onChange(settings.copy(overlayOpacityPercent = it.roundToInt())) }
                 )
                 Spacer(Modifier.height(12.dp))
                 LabelledStepper(
                     label = "Durată",
                     value = settings.overlayDurationSeconds.toDouble(),
                     step = 5.0,
-                    range = 5.0..60.0,
+                    range = 5.0..30.0,
                     format = { "${money(it, 0)} sec" },
                     onValue = {
                         onChange(settings.copy(overlayDurationSeconds = it.roundToInt()))
                     }
                 )
-
                 Spacer(Modifier.height(12.dp))
-                ToggleRow("Butoane accept / refuz", settings.overlayDecisionButtons) {
-                    onChange(settings.copy(overlayDecisionButtons = it))
-                }
-                if (settings.overlayDecisionButtons) {
-                    Advice(
-                        "Butoanele notează ce ai decis TU. RideGo nu apasă nimic în " +
-                            "Uber sau Bolt — citește ecranul, nu îl comandă."
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Advice(
-                        "Apasă-le de fiecare dată: din ele îți calculez ritmul real " +
-                            "de curse pe oră, iar ritmul decide toate cifrele pe oră " +
-                            "și verdictele.",
-                        highlight = true
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
-                Advice(
-                    "Cât timp bannerul e pe ecran, citirea e pusă pe pauză — altfel " +
-                        "RideGo și-ar citi propriul banner. La ${settings.overlayDurationSeconds} " +
-                        "secunde, atâta durează pauza după fiecare ofertă.",
-                    highlight = settings.overlayDurationSeconds > 20
-                )
-
-                Spacer(Modifier.height(14.dp))
                 OutlinedButton(
                     onClick = { OverlayService.test(context) },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("VEZI CUM ARATĂ") }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Apasă, apoi ieși din RideGo — bannerul se desenează peste ecranul " +
-                        "de dedesubt. Poți să îl tragi cu degetul; poziția se ține minte.",
+                    "Card sus: RON/km, profit, combustibil. Uber/Bolt rămân vizibile jos.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = RideGray
                 )
             }
         }
 
-        // --- position -------------------------------------------------------
+        // --- comportament -----------------------------------------------
         Spacer(Modifier.height(14.dp))
-        SectionLabel("Poziție pe ecran")
-        Spacer(Modifier.height(10.dp))
-        RideCard {
-            Column {
-                // A 3x3 grid that mirrors the screen, so the tapped square is
-                // literally where the banner will sit.
-                val grid = listOf(
-                    listOf(
-                        OverlayAnchor.TOP_LEFT,
-                        OverlayAnchor.TOP_CENTER,
-                        OverlayAnchor.TOP_RIGHT
-                    ),
-                    listOf(
-                        OverlayAnchor.CENTER_LEFT,
-                        OverlayAnchor.CENTER,
-                        OverlayAnchor.CENTER_RIGHT
-                    ),
-                    listOf(
-                        OverlayAnchor.BOTTOM_LEFT,
-                        OverlayAnchor.BOTTOM_CENTER,
-                        OverlayAnchor.BOTTOM_RIGHT
-                    )
-                )
-                grid.forEach { rowAnchors ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowAnchors.forEach { anchor ->
-                            val selected = settings.overlayAnchor == anchor
-                            OutlinedButton(
-                                onClick = { onChange(settings.copy(overlayAnchor = anchor)) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(52.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (selected) RideYellow else Color.Transparent
-                                )
-                            ) {
-                                Text(
-                                    anchor.label,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    textAlign = TextAlign.Center,
-                                    color = if (selected) Color.Black else RideWhite
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-
-                Spacer(Modifier.height(6.dp))
-                LabelledStepper(
-                    label = "Distanță laterală",
-                    value = settings.overlayMarginX.toDouble(),
-                    step = 4.0,
-                    range = 0.0..120.0,
-                    format = { "${money(it, 0)} dp" },
-                    onValue = { onChange(settings.copy(overlayMarginX = it.roundToInt())) }
-                )
-                Spacer(Modifier.height(12.dp))
-                LabelledStepper(
-                    label = "Distanță sus/jos",
-                    value = settings.overlayMarginY.toDouble(),
-                    step = 4.0,
-                    range = 0.0..300.0,
-                    format = { "${money(it, 0)} dp" },
-                    onValue = { onChange(settings.copy(overlayMarginY = it.roundToInt())) }
-                )
-
-                Spacer(Modifier.height(14.dp))
-                if (settings.overlayAnchor.isPreset) {
-                    Advice(
-                        "Bannerul stă fixat ${settings.overlayAnchor.label.lowercase()}. " +
-                            "Rămâne acolo și după rotirea ecranului sau după repornire."
-                    )
-                } else {
-                    Advice(
-                        "Bannerul e la poziția în care l-ai tras cu degetul. Alege un " +
-                            "pătrat de mai sus dacă vrei să îl fixezi înapoi pe o margine.",
-                        highlight = true
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Advice(
-                    "Dacă îl tragi cu degetul peste ecranul Uber, poziția aleasă aici " +
-                        "e înlocuită de cea trasă."
-                )
-            }
-        }
-
-        // --- behaviour ----------------------------------------------------
-        Spacer(Modifier.height(20.dp))
         SectionLabel("Comportament")
         Spacer(Modifier.height(4.dp))
         ToggleRow("Citire automată", settings.autoRead) {
             onChange(settings.copy(autoRead = it))
         }
-        ToggleRow("Sunet ofertă nouă", settings.soundOnNewOffer) {
+        ToggleRow("Sunet", settings.soundOnNewOffer) {
             onChange(settings.copy(soundOnNewOffer = it))
         }
         ToggleRow("Vibrație", settings.vibrate) {
             onChange(settings.copy(vibrate = it))
         }
-        ToggleRow("Popup peste Uber/Bolt", settings.overlayEnabled) {
-            onChange(settings.copy(overlayEnabled = it))
-        }
-        ToggleRow("Debug Mode", settings.debugMode) {
-            onChange(settings.copy(debugMode = it))
-        }
 
+        // --- avansat ----------------------------------------------------
         Spacer(Modifier.height(20.dp))
-        PrimaryButton(text = "OPTIMIZARE TELEFON", onClick = onOpenOptimization)
-        Spacer(Modifier.height(10.dp))
-        OutlinedButton(onClick = onOpenOverlayDebug, modifier = Modifier.fillMaxWidth()) {
-            Text("DEBUG OVERLAY")
+        OutlinedButton(
+            onClick = { showAdvanced = !showAdvanced },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (showAdvanced) "ASCUNDE AVANSAT" else "AVANSAT")
         }
 
-        Spacer(Modifier.height(20.dp))
-        Text(
-            "Datele capturate sunt procesate local pe dispozitiv. RideGo nu trimite " +
-                "capturi de ecran sau date către niciun server.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = RideGray
-        )
+        if (showAdvanced) {
+            Spacer(Modifier.height(14.dp))
+            SectionLabel("Filtre")
+            Spacer(Modifier.height(10.dp))
+            RideCard {
+                Column {
+                    SimpleFilter(
+                        label = "Preț minim",
+                        enabled = settings.minimumFareEnabled,
+                        onEnabled = { onChange(settings.copy(minimumFareEnabled = it)) },
+                        value = settings.minimumFare,
+                        step = 1.0,
+                        range = 1.0..300.0,
+                        format = { "${money(it, 0)} RON" },
+                        onValue = { onChange(settings.copy(minimumFare = it)) }
+                    )
+                    SimpleFilter(
+                        label = "Min RON/km",
+                        enabled = settings.minCostPerKmEnabled,
+                        onEnabled = { onChange(settings.copy(minCostPerKmEnabled = it)) },
+                        value = settings.minCostPerKm,
+                        step = 0.10,
+                        range = 0.10..20.0,
+                        format = { "${money(it)} RON/km" },
+                        onValue = { onChange(settings.copy(minCostPerKm = it)) }
+                    )
+                    SimpleFilter(
+                        label = "Max pickup",
+                        enabled = settings.maxPickupKmEnabled,
+                        onEnabled = { onChange(settings.copy(maxPickupKmEnabled = it)) },
+                        value = settings.maxPickupKm,
+                        step = 0.5,
+                        range = 0.5..60.0,
+                        format = { "${money(it, 1)} km" },
+                        onValue = { onChange(settings.copy(maxPickupKm = it)) }
+                    )
+                    SimpleFilter(
+                        label = "Max cursă",
+                        enabled = settings.maxTripKmEnabled,
+                        onEnabled = { onChange(settings.copy(maxTripKmEnabled = it)) },
+                        value = settings.maxTripKm,
+                        step = 1.0,
+                        range = 1.0..300.0,
+                        format = { "${money(it, 1)} km" },
+                        onValue = { onChange(settings.copy(maxTripKm = it)) }
+                    )
+                }
+            }
 
-        Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(14.dp))
+            SectionLabel("Calcul")
+            Spacer(Modifier.height(4.dp))
+            ToggleRow("Include pickup", settings.includePickup) {
+                onChange(settings.copy(includePickup = it))
+            }
+            LabelledStepper(
+                label = "Extra/km",
+                value = settings.extraCostPerKm,
+                step = 0.05,
+                range = 0.0..5.0,
+                format = { "${money(it)} RON" },
+                onValue = { onChange(settings.copy(extraCostPerKm = it)) }
+            )
+
+            Spacer(Modifier.height(14.dp))
+            SectionLabel("Platformă")
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PlatformMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = settings.platformMode == mode,
+                        onClick = { onChange(settings.copy(platformMode = mode)) },
+                        label = { Text(mode.label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = RideYellow,
+                            selectedLabelColor = Color.Black
+                        )
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            ToggleRow("Debug", settings.debugMode) {
+                onChange(settings.copy(debugMode = it))
+            }
+            Spacer(Modifier.height(10.dp))
+            PrimaryButton(text = "OPTIMIZARE TELEFON", onClick = onOpenOptimization)
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(onClick = onOpenOverlayDebug, modifier = Modifier.fillMaxWidth()) {
+                Text("DEBUG OVERLAY")
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("ÎNAPOI") }
         Spacer(Modifier.height(20.dp))
     }
 }
 
-/**
- * One acceptance rule, presented so the driver can decide without guessing:
- * what it does, why it matters, what to set it to, and four values to tap.
- *
- * The stepper and the presets grey out while the rule is off, so a number on
- * screen is never mistaken for one the verdict is using.
- */
 @Composable
-private fun Criterion(
+private fun SimpleFilter(
     label: String,
     enabled: Boolean,
     onEnabled: (Boolean) -> Unit,
@@ -817,14 +407,9 @@ private fun Criterion(
     step: Double,
     range: ClosedFloatingPointRange<Double>,
     format: (Double) -> String,
-    presets: List<Double>,
-    presetFormat: (Double) -> String,
-    what: String,
-    why: String,
-    recommendation: String,
     onValue: (Double) -> Unit
 ) {
-    Column(modifier = Modifier.padding(bottom = 18.dp)) {
+    Column(modifier = Modifier.padding(bottom = 12.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -841,76 +426,19 @@ private fun Criterion(
                 colors = CheckboxDefaults.colors(checkedColor = RideYellow)
             )
         }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End
-        ) {
-            StepButton("−", enabled) { onValue(clamp(value - step, range)) }
-            Text(
-                format(value),
-                style = MaterialTheme.typography.titleMedium,
-                color = if (enabled) RideYellow else RideGray,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.width(140.dp)
-            )
-            StepButton("+", enabled) { onValue(clamp(value + step, range)) }
-        }
-
-        Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            presets.forEach { preset ->
-                FilterChip(
-                    selected = enabled && Math.abs(value - preset) < 0.005,
-                    onClick = { onValue(preset) },
-                    enabled = enabled,
-                    label = { Text(presetFormat(preset)) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = RideYellow,
-                        selectedLabelColor = Color.Black
-                    )
-                )
-            }
-        }
-
         if (enabled) {
-            Spacer(Modifier.height(10.dp))
-            Text(what, style = MaterialTheme.typography.bodyMedium, color = RideWhite)
-            Spacer(Modifier.height(6.dp))
-            Text(why, style = MaterialTheme.typography.bodyMedium, color = RideGray)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                recommendation,
-                style = MaterialTheme.typography.bodyMedium,
-                color = RideGreen
-            )
-        } else {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Dezactivat — regula e ignorată complet.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = RideGray
+            LabelledStepper(
+                label = "",
+                value = value,
+                step = step,
+                range = range,
+                format = format,
+                onValue = onValue
             )
         }
     }
 }
 
-@Composable
-private fun Advice(text: String, highlight: Boolean = false) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyLarge,
-        color = if (highlight) RideGreen else RideGray
-    )
-}
-
-/** Big central value with a round control either side — usable one-handed. */
 @Composable
 private fun Stepper(
     value: Double,
@@ -949,12 +477,16 @@ private fun LabelledStepper(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = RideGray,
-            modifier = Modifier.weight(1f)
-        )
+        if (label.isNotEmpty()) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = RideGray,
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
         StepButton("−") { onValue(clamp(value - step, range)) }
         Text(
             format(value),
@@ -984,7 +516,6 @@ private fun StepButton(symbol: String, enabled: Boolean = true, onClick: () -> U
     }
 }
 
-/** Keeps values on clean steps: 9.7 + 0.1 must not become 9.799999999. */
 private fun clamp(value: Double, range: ClosedFloatingPointRange<Double>): Double {
     val rounded = Math.round(value * 100.0) / 100.0
     return rounded.coerceIn(range.start, range.endInclusive)

@@ -1,0 +1,15 @@
+Ești șofer ride sharing și vrei să știi rapid dacă o cursă merită?
+
+TripWorth analizează oferta direct de pe ecran și îți arată:
+
+• Verdict instant: Accept / Atenție / Refuz
+• RON/km și RON/oră — inclusiv profit net după combustibil
+• Distanță preluare, durată estimată, praguri personalizabile
+• Overlay peste alte aplicații — vezi verdictul fără să schimbi ecranul
+• Istoric și statistici pe tură
+
+100% local pe telefon. Fără cont. Fără trimitere date pe server.
+
+Tu setezi regulile — TripWorth doar calculează.
+
+Compatibil cu aplicațiile tale de șofer.

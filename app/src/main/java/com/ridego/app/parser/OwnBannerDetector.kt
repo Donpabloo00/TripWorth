@@ -20,6 +20,20 @@ object OwnBannerDetector {
      * offers, which is a far worse failure than reading one frame twice.
      */
     private val MARKERS = listOf(
+        // Current top-card banner (RideCheetah-style analysis).
+        "TRIPWORTH",
+        "VERDICTCURSA",
+        "VERDICT CURSA",
+        // Legacy banner brand — still match old contaminated archives.
+        "RIDEGO",
+        "CURSA BUNA",
+        "CURSA SLABA",
+        "COST COMB",
+        "INCASEZI",
+        "DISTANTA LA CLIENT",
+        "AM ACCEPTAT",
+        "AM REFUZAT",
+        // Legacy banner phrases — still match old contaminated archives.
         "TRAGE PENTRU A MUTA",
         // Not "PRAGUL TAU": the device archive shows OCR rendering it
         // "PRAGUL TAD". The first word alone is already a phrase no
@@ -27,8 +41,6 @@ object OwnBannerDetector {
         "PRAGUL",
         "CASTIG ESTIMAT",
         "RON/ORA NET",
-        "AM ACCEPTAT",
-        "AM REFUZAT",
         "PRELUARE PREA DEPARTE",
         "SUB COSTUL MINIM",
         "CURSA PREA LUNGA",

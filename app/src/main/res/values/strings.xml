@@ -1,7 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">RideGo</string>
-    <string name="slogan">Decizii mai rapide. Curse mai profitabile.</string>
-    <string name="privacy_note">Datele capturate sunt procesate local pe dispozitiv.</string>
-    <string name="capture_channel_name">Citire ecran</string>
+    <string name="app_name">TripWorth</string>
+    <string name="brand_banner">TRIPWORTH</string>
+    <string name="slogan">Is the trip worth it?</string>
+    <string name="privacy_note">Captured data is processed locally on your device.</string>
+    <string name="capture_channel_name">Screen reading</string>
+
+    <string name="setup_intro">Complete the steps so %1$s can read Uber and Bolt offers.</string>
+    <string name="setup_auto_start_detail">Reads offers and shows the analysis card without opening %1$s.</string>
+    <string name="battery_exempt_ok">%1$s is exempt from battery restrictions. Reading won\'t be stopped mid-shift.</string>
+    <string name="storage_title">Storage used by %1$s</string>
+    <string name="overlay_test_hint">Tap, then leave %1$s immediately (Home or Uber). The test banner should appear for 15 seconds.</string>
+
+    <string name="play_store_title">TripWorth - Ride Verdict</string>
+    <string name="play_store_short_description">Accept or skip rides in seconds. RON/km, net profit, local processing.</string>
+    <string name="privacy_policy_url">https://donpabloo00.github.io/TripWorth/privacy.html</string>
 </resources>

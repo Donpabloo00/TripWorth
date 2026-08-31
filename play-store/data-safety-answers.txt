@@ -1,0 +1,21 @@
+Google Play Console → App content → Data safety
+(TripWorth — copy these answers)
+
+Data collection: NO
+All processing is local on device.
+
+Data types: None collected or shared
+
+Security practices:
+- Data is encrypted in transit: N/A (no transmission)
+- Data is encrypted at rest: Optional (device default)
+- Users can request data deletion: Yes (uninstall / clear history in app)
+
+Permissions justification (store listing):
+- Screen capture: Read ride offer text via OCR locally
+- Display over other apps: Show verdict overlay
+- Notifications: Foreground service for screen reading
+- Battery optimization: Optional — keep service alive during shift
+
+Privacy policy URL:
+https://donpabloo00.github.io/TripWorth/privacy.html

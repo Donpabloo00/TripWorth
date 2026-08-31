@@ -38,9 +38,9 @@ fun Verdict.color(): Color = when (this) {
 }
 
 fun Verdict.label(): String = when (this) {
-    Verdict.ACCEPT -> "ACCEPTĂ"
+    Verdict.ACCEPT -> "CURSĂ BUNĂ"
     Verdict.CAUTION -> "ATENȚIE"
-    Verdict.REJECT -> "RESPINGE"
+    Verdict.REJECT -> "CURSĂ SLABĂ"
 }
 
 @Composable
@@ -84,7 +84,7 @@ fun MetricTile(
         )
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.titleMedium,
             color = RideGray,
             textAlign = TextAlign.Center
         )

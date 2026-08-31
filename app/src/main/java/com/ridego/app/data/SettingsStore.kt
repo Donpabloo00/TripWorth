@@ -118,7 +118,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
     }
 
     internal companion object {
-        const val PREFS_NAME = "ridego_settings"
+        const val PREFS_NAME = "tripworth_settings"
 
         const val KEY_RON_HOUR = "min_ron_hour"
         const val KEY_RON_KM = "min_ron_km"

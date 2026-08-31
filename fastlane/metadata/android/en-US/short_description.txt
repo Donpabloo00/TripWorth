@@ -1,0 +1,1 @@
+Accept or skip rides in seconds. RON/km, net profit, 100% local on device.

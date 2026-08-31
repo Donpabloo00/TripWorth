@@ -1,5 +1,7 @@
+import java.io.FileInputStream
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -8,20 +10,38 @@ plugins {
 }
 
 android {
-    namespace = "com.ridego.app"
+    namespace = "com.tripworth.app"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.ridego.app"
+        applicationId = "com.tripworth.app"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
     }
 
+    signingConfigs {
+        val keystorePropertiesFile = rootProject.file("keystore.properties")
+        if (keystorePropertiesFile.exists()) {
+            val keystoreProperties = Properties().apply {
+                load(FileInputStream(keystorePropertiesFile))
+            }
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfigs.findByName("release")?.let {
+                signingConfig = it
+            }
         }
     }
 
