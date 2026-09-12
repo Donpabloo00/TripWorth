@@ -15,4 +15,19 @@
     <string name="play_store_title">TripWorth - Ride Verdict</string>
     <string name="play_store_short_description">Accept or skip rides in seconds. RON/km, net profit, local processing.</string>
     <string name="privacy_policy_url">https://donpabloo00.github.io/TripWorth/privacy.html</string>
+
+    <string name="admob_app_id">ca-app-pub-6012744410422590~1812731921</string>
+
+    <string name="plan_section">Plan</string>
+    <string name="plan_premium">Premium — unlimited rides</string>
+    <string name="plan_free_remaining">Free — %1$d rides left</string>
+    <string name="plan_needs_unlock">Free limit reached</string>
+    <string name="plan_watch_ad">Watch ad → +10 rides</string>
+    <string name="plan_subscribe">30 RON/week — unlimited</string>
+    <string name="plan_restore">Restore purchase</string>
+    <string name="plan_ad_loading">Loading ad…</string>
+    <string name="plan_ad_failed">Ad unavailable. Try again.</string>
+    <string name="plan_billing_unavailable">Billing unavailable. Try again later.</string>
+    <string name="plan_unlock_title">Unlock more rides</string>
+    <string name="plan_unlock_body">You used your free rides. Watch a short ad for +10, or go Premium.</string>
 </resources>

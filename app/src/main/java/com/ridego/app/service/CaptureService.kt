@@ -171,6 +171,16 @@ class CaptureService : Service() {
                 val analysis = AppState.submitOcrText(text)
                 if (analysis == null) continue
 
+                // Free tier exhausted: keep history, but no vibration / overlay.
+                if (!AppState.wasLastOfferQuotaAllowed()) {
+                    OverlayDiagnostics.flowStop(
+                        "8 OUTPUT",
+                        "cotă gratuită epuizată — fără overlay (vezi reclamă sau Premium)"
+                    )
+                    OverlayDiagnostics.setOutputs(uiVisible = false, overlayRequested = false)
+                    continue
+                }
+
                 notifyDriver()
 
                 // One analysis, two outputs. It is already in AppState for the

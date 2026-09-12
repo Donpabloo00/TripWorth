@@ -39,9 +39,20 @@ object AppState {
 
     private lateinit var settingsStore: SettingsStore
     private lateinit var historyStore: HistoryStore
+    private lateinit var monetizationStore: MonetizationStore
 
     private val _settings = MutableStateFlow(RideSettings())
     val settings: StateFlow<RideSettings> = _settings.asStateFlow()
+
+    private val _monetization = MutableStateFlow(MonetizationState())
+    val monetization: StateFlow<MonetizationState> = _monetization.asStateFlow()
+
+    /**
+     * Whether the most recent [submitOffer] was allowed to show a verdict
+     * (premium or free quota still available for that offer).
+     */
+    private val _lastOfferQuotaAllowed = MutableStateFlow(true)
+    val lastOfferQuotaAllowed: StateFlow<Boolean> = _lastOfferQuotaAllowed.asStateFlow()
 
     private val _isActive = MutableStateFlow(false)
     val isActive: StateFlow<Boolean> = _isActive.asStateFlow()
@@ -122,9 +133,62 @@ object AppState {
         if (::settingsStore.isInitialized) return
         settingsStore = SettingsStore(context)
         historyStore = HistoryStore(context)
+        monetizationStore = MonetizationStore(context)
         OcrArchive.init(context)
         _settings.value = settingsStore.load()
+        _monetization.value = monetizationStore.load()
         refreshHistory()
+    }
+
+    fun canShowVerdict(): Boolean {
+        val m = _monetization.value
+        return m.isPremium || m.freeRidesRemaining > 0
+    }
+
+    fun wasLastOfferQuotaAllowed(): Boolean = _lastOfferQuotaAllowed.value
+
+    /** Rewarded ad finished — grant another free batch. */
+    fun grantAdReward() {
+        val current = _monetization.value
+        val updated = current.copy(
+            freeRidesRemaining = current.freeRidesRemaining + MonetizationState.FREE_RIDES_PER_GRANT
+        )
+        _monetization.value = updated
+        monetizationStore.save(updated)
+    }
+
+    fun setPremiumFromPurchase(isPremium: Boolean, expiryEpochMs: Long = 0L) {
+        val current = _monetization.value
+        val updated = current.copy(
+            isPremium = isPremium,
+            premiumExpiryEpochMs = expiryEpochMs
+        )
+        _monetization.value = updated
+        monetizationStore.save(updated)
+    }
+
+    private fun consumeQuotaForOffer(consumeQuota: Boolean): Boolean {
+        if (!consumeQuota) {
+            _lastOfferQuotaAllowed.value = true
+            return true
+        }
+        val current = _monetization.value
+        if (current.isPremium) {
+            _lastOfferQuotaAllowed.value = true
+            return true
+        }
+        if (current.freeRidesRemaining <= 0) {
+            _lastOfferQuotaAllowed.value = false
+            return false
+        }
+        val updated = current.copy(
+            freeRidesRemaining = current.freeRidesRemaining - 1,
+            lifetimeOffersCounted = current.lifetimeOffersCounted + 1
+        )
+        _monetization.value = updated
+        monetizationStore.save(updated)
+        _lastOfferQuotaAllowed.value = true
+        return true
     }
 
     fun updateSettings(settings: RideSettings) {
@@ -244,8 +308,14 @@ object AppState {
     /**
      * Analyzes an offer unless it is the one already showing.
      * Returns null when the offer was suppressed as a duplicate.
+     *
+     * [consumeQuota] is false for demo samples so testing never burns free rides.
      */
-    fun submitOffer(offer: RideOffer, recordDuplicate: Boolean = false): OfferAnalysis? {
+    fun submitOffer(
+        offer: RideOffer,
+        recordDuplicate: Boolean = false,
+        consumeQuota: Boolean = true
+    ): OfferAnalysis? {
         if (!recordDuplicate && offer.signature == lastSignature) return null
         lastSignature = offer.signature
 
@@ -254,6 +324,7 @@ object AppState {
         _lastAnalysisAt.value = System.currentTimeMillis()
         historyStore.add(analysis)
         refreshHistory()
+        consumeQuotaForOffer(consumeQuota)
         return analysis
     }
 
@@ -264,7 +335,7 @@ object AppState {
 
     /** Demo taps should always re-run, even on the same sample offer. */
     fun submitDemoOffer(offer: RideOffer): OfferAnalysis =
-        submitOffer(offer, recordDuplicate = true)!!
+        submitOffer(offer, recordDuplicate = true, consumeQuota = false)!!
 
     /** Records what the driver chose on the banner. Never touches Uber. */
     fun recordDriverDecision(decision: DriverDecision) {

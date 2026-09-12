@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.ridego.app.calculator.RideSettings
 import com.ridego.app.calculator.RuleProfile
 import com.ridego.app.data.HistoryEntry
+import com.ridego.app.data.MonetizationState
 import com.ridego.app.data.ShiftStats
 import com.ridego.app.overlay.OverlayService
 import com.ridego.app.parser.PlatformMode
@@ -44,8 +45,16 @@ import com.ridego.app.ui.PrimaryButton
 import com.ridego.app.ui.RideCard
 import com.ridego.app.ui.SectionLabel
 import com.ridego.app.ui.theme.RideGray
+import com.ridego.app.ui.theme.RideGreen
+import com.ridego.app.ui.theme.RideOrange
 import com.ridego.app.ui.theme.RideWhite
 import com.ridego.app.ui.theme.RideYellow
+import com.ridego.app.ui.theme.PlanAd
+import com.ridego.app.ui.theme.PlanAdOn
+import com.ridego.app.ui.theme.PlanPremium
+import com.ridego.app.ui.theme.PlanPremiumOn
+import androidx.compose.ui.res.stringResource
+import com.tripworth.app.R
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -65,6 +74,11 @@ private fun roundPace(value: Double): Double =
 fun SettingsScreen(
     settings: RideSettings,
     history: List<HistoryEntry>,
+    monetization: MonetizationState,
+    planMessage: String?,
+    onWatchAd: () -> Unit,
+    onSubscribe: () -> Unit,
+    onRestorePurchases: () -> Unit,
     onChange: (RideSettings) -> Unit,
     onOpenOverlayDebug: () -> Unit,
     onOpenOptimization: () -> Unit,
@@ -83,6 +97,59 @@ fun SettingsScreen(
             .padding(20.dp)
     ) {
         Text("SETĂRI", style = MaterialTheme.typography.headlineMedium, color = RideYellow)
+
+        Spacer(Modifier.height(16.dp))
+        SectionLabel(stringResource(R.string.plan_section))
+        Spacer(Modifier.height(10.dp))
+        RideCard {
+            Column {
+                Text(
+                    when {
+                        monetization.isPremium -> stringResource(R.string.plan_premium)
+                        monetization.needsUnlock -> stringResource(R.string.plan_needs_unlock)
+                        else -> stringResource(
+                            R.string.plan_free_remaining,
+                            monetization.freeRidesRemaining
+                        )
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = when {
+                        monetization.isPremium -> PlanPremium
+                        monetization.needsUnlock -> RideOrange
+                        else -> PlanAd
+                    }
+                )
+                if (!planMessage.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(planMessage, style = MaterialTheme.typography.bodyMedium, color = RideGray)
+                }
+                if (!monetization.isPremium) {
+                    Spacer(Modifier.height(12.dp))
+                    if (monetization.needsUnlock) {
+                        PrimaryButton(
+                            text = stringResource(R.string.plan_watch_ad),
+                            onClick = onWatchAd,
+                            container = PlanAd,
+                            content = PlanAdOn
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    PrimaryButton(
+                        text = stringResource(R.string.plan_subscribe),
+                        onClick = onSubscribe,
+                        container = PlanPremium,
+                        content = PlanPremiumOn
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onRestorePurchases,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.plan_restore), color = PlanPremium)
+                    }
+                }
+            }
+        }
 
         Spacer(Modifier.height(16.dp))
         PrimaryButton(text = "CONFIGURARE (PERMISIUNI)", onClick = onOpenOptimization)

@@ -1,21 +1,40 @@
 Google Play Console → App content → Data safety
-(TripWorth — copy these answers)
+(TripWorth 1.1.0 — freemium with ads + Play Billing)
 
-Data collection: NO
-All processing is local on device.
+Does your app collect or share any of the user data types?
+→ YES (because of AdMob / advertising)
 
-Data types: None collected or shared
+Data collected / shared (via Google AdMob — third party):
+- Device or other IDs (Advertising ID) — shared with ad partners for ads
+- App interactions / ad interaction (if asked) — for advertising
+
+Purposes: Advertising or marketing
+Collected: Yes (by AdMob SDK)
+Shared: Yes (with Google / ad partners)
+Processed ephemerally: follow AdMob defaults in the form
+Required / optional: Required for free tier ad unlocks
+Users can request deletion: Not applicable for ad IDs managed by Google / device settings
+  (Users can reset advertising ID in Android settings)
+
+Purchase / financial info:
+- Google Play Billing handles subscriptions. Do NOT declare card numbers yourself.
+- If the form asks about purchase history: collected by Google Play (not by your servers).
+
+Still local-only for ride OCR / history:
+- Screen content, settings, offer history: NOT collected or shared by TripWorth servers
+  (all local on device)
 
 Security practices:
-- Data is encrypted in transit: N/A (no transmission)
-- Data is encrypted at rest: Optional (device default)
-- Users can request data deletion: Yes (uninstall / clear history in app)
+- Data encrypted in transit: Yes (AdMob / Play network calls use HTTPS)
+- Users can request data deletion: Yes for local app data (uninstall / clear history)
 
-Permissions justification (store listing):
-- Screen capture: Read ride offer text via OCR locally
-- Display over other apps: Show verdict overlay
-- Notifications: Foreground service for screen reading
-- Battery optimization: Optional — keep service alive during shift
+Ads declaration (App content → Ads):
+- App contains ads? → YES (rewarded ads on free tier)
 
 Privacy policy URL:
 https://donpabloo00.github.io/TripWorth/privacy.html
+
+Play Console — Subscription product:
+- Product ID: tripworth_weekly
+- Base plan: weekly
+- Price: 30 RON / week

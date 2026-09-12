@@ -14,4 +14,19 @@
 
     <string name="play_store_title">TripWorth - Verdict Cursă</string>
     <string name="play_store_short_description">Acceptă sau refuză curse în secunde. RON/km, profit net, procesare locală.</string>
+
+    <string name="admob_app_id">ca-app-pub-6012744410422590~1812731921</string>
+
+    <string name="plan_section">Plan</string>
+    <string name="plan_premium">Premium — curse nelimitate</string>
+    <string name="plan_free_remaining">Gratuit — %1$d curse rămase</string>
+    <string name="plan_needs_unlock">Limită gratuită atinsă</string>
+    <string name="plan_watch_ad">Vezi reclamă → +10 curse</string>
+    <string name="plan_subscribe">30 RON/săptămână — nelimitat</string>
+    <string name="plan_restore">Restaurează achiziția</string>
+    <string name="plan_ad_loading">Se încarcă reclama…</string>
+    <string name="plan_ad_failed">Reclama nu e disponibilă. Încearcă din nou.</string>
+    <string name="plan_billing_unavailable">Plățile nu sunt disponibile acum. Încearcă mai târziu.</string>
+    <string name="plan_unlock_title">Deblochează mai multe curse</string>
+    <string name="plan_unlock_body">Ai folosit cursele gratuite. Vezi o reclamă scurtă pentru +10, sau treci pe Premium.</string>
 </resources>

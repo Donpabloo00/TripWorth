@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ridego.app.calculator.OfferAnalysis
 import com.ridego.app.calculator.Verdict
+import com.ridego.app.data.MonetizationState
 import com.ridego.app.data.PlatformStats
 import com.ridego.app.data.Stats
 import com.ridego.app.overlay.OverlayService
@@ -54,6 +55,10 @@ import com.ridego.app.ui.theme.RideRed
 import com.ridego.app.ui.theme.RideSurface
 import com.ridego.app.ui.theme.RideWhite
 import com.ridego.app.ui.theme.RideYellow
+import com.ridego.app.ui.theme.PlanAd
+import com.ridego.app.ui.theme.PlanAdOn
+import com.ridego.app.ui.theme.PlanPremium
+import com.ridego.app.ui.theme.PlanPremiumOn
 
 @Composable
 fun HomeScreen(
@@ -64,6 +69,10 @@ fun HomeScreen(
     lastAnalysis: OfferAnalysis?,
     includePickup: Boolean,
     debugMode: Boolean,
+    monetization: MonetizationState,
+    planMessage: String?,
+    onWatchAd: () -> Unit,
+    onSubscribe: () -> Unit,
     onOpenLastOffer: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
@@ -91,6 +100,18 @@ fun HomeScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = RideGray
         )
+
+        Spacer(Modifier.height(12.dp))
+        PlanStatusChip(monetization)
+
+        if (monetization.needsUnlock) {
+            Spacer(Modifier.height(12.dp))
+            UnlockCard(
+                planMessage = planMessage,
+                onWatchAd = onWatchAd,
+                onSubscribe = onSubscribe
+            )
+        }
 
         Spacer(Modifier.height(16.dp))
 
@@ -209,6 +230,71 @@ fun HomeScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = RideGray
         )
+    }
+}
+
+@Composable
+private fun PlanStatusChip(monetization: MonetizationState) {
+    val text = when {
+        monetization.isPremium -> stringResource(R.string.plan_premium)
+        monetization.needsUnlock -> stringResource(R.string.plan_needs_unlock)
+        else -> stringResource(R.string.plan_free_remaining, monetization.freeRidesRemaining)
+    }
+    val bg = when {
+        monetization.isPremium -> PlanPremium
+        monetization.needsUnlock -> RideRed
+        else -> PlanAd
+    }
+    val fg = when {
+        monetization.isPremium -> PlanPremiumOn
+        monetization.needsUnlock -> RideWhite
+        else -> PlanAdOn
+    }
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = fg,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .background(bg, RoundedCornerShape(50))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    )
+}
+
+@Composable
+private fun UnlockCard(
+    planMessage: String?,
+    onWatchAd: () -> Unit,
+    onSubscribe: () -> Unit
+) {
+    RideCard {
+        Column {
+            SectionLabel(stringResource(R.string.plan_unlock_title))
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.plan_unlock_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = RideGray
+            )
+            if (!planMessage.isNullOrBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(planMessage, style = MaterialTheme.typography.bodyMedium, color = PlanAd)
+            }
+            Spacer(Modifier.height(12.dp))
+            PrimaryButton(
+                text = stringResource(R.string.plan_watch_ad),
+                onClick = onWatchAd,
+                container = PlanAd,
+                content = PlanAdOn
+            )
+            Spacer(Modifier.height(8.dp))
+            PrimaryButton(
+                text = stringResource(R.string.plan_subscribe),
+                onClick = onSubscribe,
+                container = PlanPremium,
+                content = PlanPremiumOn
+            )
+        }
     }
 }
 

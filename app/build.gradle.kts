@@ -11,14 +11,14 @@ plugins {
 
 android {
     namespace = "com.tripworth.app"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.tripworth.app"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.1"
+        targetSdk = 36
+        versionCode = 6
+        versionName = "1.1.2"
     }
 
     signingConfigs {
@@ -37,11 +37,24 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Google sample rewarded unit — avoids invalid-traffic while developing.
+            buildConfigField(
+                "String",
+                "ADMOB_REWARDED_UNIT_ID",
+                "\"ca-app-pub-3940256099942544/5224354917\""
+            )
+        }
         release {
             isMinifyEnabled = false
             signingConfigs.findByName("release")?.let {
                 signingConfig = it
             }
+            buildConfigField(
+                "String",
+                "ADMOB_REWARDED_UNIT_ID",
+                "\"ca-app-pub-6012744410422590/6298771843\""
+            )
         }
     }
 
@@ -92,6 +105,9 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
+    implementation("com.google.android.gms:play-services-ads:23.6.0")
 
     testImplementation("junit:junit:4.13.2")
 }

@@ -14,14 +14,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.ridego.app.ads.RewardedAdManager
+import com.ridego.app.billing.BillingManager
 import com.ridego.app.data.AppState
 import com.ridego.app.overlay.OverlayService
 import com.ridego.app.parser.OfferParserRouter
@@ -37,8 +44,11 @@ import com.ridego.app.ui.screens.OverlayDebugScreen
 import com.ridego.app.ui.screens.SettingsScreen
 import com.ridego.app.ui.theme.RideBlack
 import com.ridego.app.ui.theme.TripWorthTheme
+import com.tripworth.app.R
 
 class MainActivity : ComponentActivity() {
+
+    private var billingManager: BillingManager? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,10 +62,20 @@ class MainActivity : ComponentActivity() {
                         .background(RideBlack),
                     color = RideBlack
                 ) {
-                    TripWorthNavHost()
+                    TripWorthNavHost(
+                        activity = this,
+                        onBillingReady = { billingManager = it },
+                        onBillingCleared = { billingManager = null }
+                    )
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        billingManager?.destroy()
+        billingManager = null
+        super.onDestroy()
     }
 
     // Foreground state is owned by ProcessLifecycleOwner in TripWorthApp; a
@@ -82,7 +102,11 @@ private object Routes {
 }
 
 @Composable
-private fun TripWorthNavHost() {
+private fun TripWorthNavHost(
+    activity: ComponentActivity,
+    onBillingReady: (BillingManager) -> Unit,
+    onBillingCleared: () -> Unit
+) {
     val navController = rememberNavController()
     val context = LocalContext.current
 
@@ -92,12 +116,65 @@ private fun TripWorthNavHost() {
     val history by AppState.history.collectAsState()
     val lastAnalysis by AppState.lastAnalysis.collectAsState()
     val lastParse by AppState.lastParse.collectAsState()
+    val monetization by AppState.monetization.collectAsState()
+
+    var planMessage by remember { mutableStateOf<String?>(null) }
+    val billingUnavailable = stringResource(R.string.plan_billing_unavailable)
+    val adFailed = stringResource(R.string.plan_ad_failed)
+    val adLoading = stringResource(R.string.plan_ad_loading)
+
+    val billingManager = remember {
+        BillingManager(activity) { code ->
+            planMessage = when {
+                code.startsWith("billing_") ||
+                    code.startsWith("product_") ||
+                    code.startsWith("offer_") ||
+                    code.startsWith("purchase_") -> billingUnavailable
+                else -> null
+            }
+        }.also { onBillingReady(it) }
+    }
+
+    DisposableEffect(Unit) {
+        billingManager.start()
+        onDispose {
+            billingManager.destroy()
+            onBillingCleared()
+        }
+    }
+
+    fun watchAd() {
+        planMessage = adLoading
+        RewardedAdManager.show(
+            activity = activity,
+            onReward = {
+                AppState.grantAdReward()
+                planMessage = null
+            },
+            onFailed = {
+                planMessage = adFailed
+                RewardedAdManager.preload(activity)
+            }
+        )
+    }
+
+    fun subscribe() {
+        planMessage = null
+        billingManager.launchWeeklyPurchase(activity)
+    }
+
+    fun restore() {
+        planMessage = null
+        billingManager.restorePurchases()
+    }
 
     val projectionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val data = result.data
-        if (result.resultCode != android.app.Activity.RESULT_OK || data == null) return@rememberLauncherForActivityResult
+        if (result.resultCode != android.app.Activity.RESULT_OK || data == null) {
+            return@rememberLauncherForActivityResult
+        }
         CaptureService.start(context, result.resultCode, data)
     }
 
@@ -115,6 +192,10 @@ private fun TripWorthNavHost() {
                 lastAnalysis = lastAnalysis,
                 includePickup = settings.includePickup,
                 debugMode = settings.debugMode,
+                monetization = monetization,
+                planMessage = planMessage,
+                onWatchAd = { watchAd() },
+                onSubscribe = { subscribe() },
                 onOpenLastOffer = { navController.navigate(Routes.OFFER) },
                 onStart = {
                     // Without this the overlay silently never appears, which
@@ -173,6 +254,11 @@ private fun TripWorthNavHost() {
             SettingsScreen(
                 settings = settings,
                 history = history,
+                monetization = monetization,
+                planMessage = planMessage,
+                onWatchAd = { watchAd() },
+                onSubscribe = { subscribe() },
+                onRestorePurchases = { restore() },
                 onChange = { updated ->
                     AppState.updateSettings(updated)
                     if (updated.overlayEnabled && !OverlayService.canDrawOverlays(context)) {

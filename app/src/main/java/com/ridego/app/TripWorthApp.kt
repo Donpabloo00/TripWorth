@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.ridego.app.ads.RewardedAdManager
 import com.ridego.app.data.AppState
 
 class TripWorthApp : Application() {
@@ -11,6 +12,7 @@ class TripWorthApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppState.init(this)
+        RewardedAdManager.initialize(this)
         observeForeground()
     }
 

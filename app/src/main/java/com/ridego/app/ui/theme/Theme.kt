@@ -20,6 +20,14 @@ val RideGreen = Color(0xFF25C368)
 val RideRed = Color(0xFFE23D3D)
 val RideOrange = Color(0xFFFF9427)
 
+/** Rewarded-ad CTA — distinct from Premium gold. */
+val PlanAd = Color(0xFF2BB8FF)
+val PlanAdOn = Color(0xFF041018)
+
+/** Weekly subscription / Premium CTA. */
+val PlanPremium = Color(0xFFFFC400)
+val PlanPremiumOn = Color(0xFF1A1400)
+
 private val RideColorScheme = darkColorScheme(
     primary = RideYellow,
     onPrimary = RideBlack,
